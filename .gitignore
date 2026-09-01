@@ -1,0 +1,15 @@
+# Android / Gradle
+app-android/.gradle/
+app-android/build/
+app-android/app/build/
+app-android/local.properties
+app-android/.idea/
+*.iml
+.DS_Store
+
+# CREDENCIAIS - nunca versionar
+# Client-ID e Access Token da Cielo, chaves de banco, etc.
+credenciais.properties
+*.keystore
+*.jks
+.env
