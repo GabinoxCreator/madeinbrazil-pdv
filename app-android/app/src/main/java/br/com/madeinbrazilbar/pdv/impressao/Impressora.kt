@@ -13,7 +13,7 @@ object Impressora {
 
     const val PORTA_PADRAO = 9100
 
-    private const val TIMEOUT_CONEXAO_MS = 4000
+    private const val TIMEOUT_CONEXAO_MS = 2000
     private const val TIMEOUT_ESCRITA_MS = 5000
 
     sealed class Resultado {

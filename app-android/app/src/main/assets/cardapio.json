@@ -1,0 +1,1974 @@
+{
+ "_aviso": "MASSA DE TESTE. Copia do cardapio real do bar em 02/09/2026, para desenvolver sem depender do banco do bar. Nao e integracao. Substituir quando o banco do PDV existir.",
+ "pontosProducao": [
+  {
+   "id": "caixa",
+   "nome": "Caixa",
+   "ip": "192.168.0.70",
+   "porta": 9100,
+   "ipConfirmado": true
+  },
+  {
+   "id": "drink",
+   "nome": "Bar de drink",
+   "ip": "192.168.0.72",
+   "porta": 9100,
+   "ipConfirmado": true
+  },
+  {
+   "id": "cerveja",
+   "nome": "Bar de cerveja",
+   "ip": "192.168.0.73",
+   "porta": 9100,
+   "ipConfirmado": true
+  },
+  {
+   "id": "cozinha",
+   "nome": "Cozinha",
+   "ip": "192.168.0.71",
+   "porta": 9100,
+   "ipConfirmado": false
+  }
+ ],
+ "categorias": [
+  {
+   "slug": "almoco",
+   "nome": "Almoço",
+   "ordem": 0
+  },
+  {
+   "slug": "entradas",
+   "nome": "Entradas",
+   "ordem": 1
+  },
+  {
+   "slug": "porcoes",
+   "nome": "Porções",
+   "ordem": 2
+  },
+  {
+   "slug": "lanches",
+   "nome": "Lanches",
+   "ordem": 3
+  },
+  {
+   "slug": "chapas",
+   "nome": "Chapas",
+   "ordem": 4
+  },
+  {
+   "slug": "guarnicoes",
+   "nome": "Guarnições",
+   "ordem": 5
+  },
+  {
+   "slug": "molhos-extras",
+   "nome": "Molhos Extras",
+   "ordem": 6
+  },
+  {
+   "slug": "cervejas",
+   "nome": "Cervejas",
+   "ordem": 7
+  },
+  {
+   "slug": "drinks",
+   "nome": "Drinks",
+   "ordem": 8
+  },
+  {
+   "slug": "doses",
+   "nome": "Doses",
+   "ordem": 9
+  },
+  {
+   "slug": "refrigerantes",
+   "nome": "Refrigerantes",
+   "ordem": 10
+  },
+  {
+   "slug": "energeticos",
+   "nome": "Energéticos",
+   "ordem": 11
+  },
+  {
+   "slug": "aguas",
+   "nome": "Águas",
+   "ordem": 12
+  },
+  {
+   "slug": "sucos",
+   "nome": "Sucos",
+   "ordem": 13
+  },
+  {
+   "slug": "combos",
+   "nome": "Combos",
+   "ordem": 14
+  },
+  {
+   "slug": "sorvetes",
+   "nome": "Sorvetes",
+   "ordem": 15
+  }
+ ],
+ "itens": [
+  {
+   "id": "almoco-000",
+   "categoria": "almoco",
+   "nome": "Segunda · Filé de Frango",
+   "preco": 26.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "101",
+   "ordem": 0
+  },
+  {
+   "id": "almoco-001",
+   "categoria": "almoco",
+   "nome": "Terça · Strogonoff",
+   "preco": 26.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "102",
+   "ordem": 1
+  },
+  {
+   "id": "almoco-002",
+   "categoria": "almoco",
+   "nome": "Quarta · Feijoada",
+   "preco": 26.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "103",
+   "ordem": 2
+  },
+  {
+   "id": "almoco-003",
+   "categoria": "almoco",
+   "nome": "Quinta · Bife",
+   "preco": 26.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "104",
+   "ordem": 3
+  },
+  {
+   "id": "almoco-004",
+   "categoria": "almoco",
+   "nome": "Sexta · Parmegiana",
+   "preco": 26.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "105",
+   "ordem": 4
+  },
+  {
+   "id": "almoco-005",
+   "categoria": "almoco",
+   "nome": "Sábado · Buffet de Feijoada",
+   "preco": 49.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "106",
+   "ordem": 5
+  },
+  {
+   "id": "almoco-006",
+   "categoria": "almoco",
+   "nome": "Filé de Frango (Executivo)",
+   "preco": 29.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "107",
+   "ordem": 6
+  },
+  {
+   "id": "almoco-007",
+   "categoria": "almoco",
+   "nome": "Strogonoff (Executivo)",
+   "preco": 30.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "108",
+   "ordem": 7
+  },
+  {
+   "id": "almoco-008",
+   "categoria": "almoco",
+   "nome": "Filé de Tilápia (Executivo)",
+   "preco": 33.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "109",
+   "ordem": 8
+  },
+  {
+   "id": "almoco-009",
+   "categoria": "almoco",
+   "nome": "Bife (Executivo)",
+   "preco": 29.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "110",
+   "ordem": 9
+  },
+  {
+   "id": "almoco-010",
+   "categoria": "almoco",
+   "nome": "Parmegiana (Executivo)",
+   "preco": 35.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "111",
+   "ordem": 10
+  },
+  {
+   "id": "entradas-000",
+   "categoria": "entradas",
+   "nome": "Amendoim c/ Alho",
+   "preco": 9.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "112",
+   "ordem": 0
+  },
+  {
+   "id": "entradas-001",
+   "categoria": "entradas",
+   "nome": "Amendoim Sortido",
+   "preco": 7.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "113",
+   "ordem": 1
+  },
+  {
+   "id": "entradas-002",
+   "categoria": "entradas",
+   "nome": "Tábua de Frios",
+   "preco": 60.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "114",
+   "ordem": 2
+  },
+  {
+   "id": "entradas-003",
+   "categoria": "entradas",
+   "nome": "Dadinho de Tapioca",
+   "preco": 39.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "115",
+   "ordem": 3
+  },
+  {
+   "id": "entradas-004",
+   "categoria": "entradas",
+   "nome": "Torresmo",
+   "preco": 19.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "116",
+   "ordem": 4
+  },
+  {
+   "id": "entradas-005",
+   "categoria": "entradas",
+   "nome": "Anéis de Cebola",
+   "preco": 19.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "117",
+   "ordem": 5
+  },
+  {
+   "id": "entradas-006",
+   "categoria": "entradas",
+   "nome": "Salame",
+   "preco": 29.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "118",
+   "ordem": 6
+  },
+  {
+   "id": "porcoes-000",
+   "categoria": "porcoes",
+   "nome": "Medalhão de Tilapia com Provolone",
+   "preco": 69.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "119",
+   "ordem": 0
+  },
+  {
+   "id": "porcoes-001",
+   "categoria": "porcoes",
+   "nome": "Panceta com Mandioca Frita",
+   "preco": 65.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "120",
+   "ordem": 1
+  },
+  {
+   "id": "porcoes-002",
+   "categoria": "porcoes",
+   "nome": "Isca de Tilápia",
+   "preco": 54.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "121",
+   "ordem": 2
+  },
+  {
+   "id": "porcoes-003",
+   "categoria": "porcoes",
+   "nome": "Isca de Frango",
+   "preco": 39.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "122",
+   "ordem": 3
+  },
+  {
+   "id": "porcoes-004",
+   "categoria": "porcoes",
+   "nome": "Mini Pastelzinho de Queijo",
+   "preco": 37.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "123",
+   "ordem": 4
+  },
+  {
+   "id": "porcoes-005",
+   "categoria": "porcoes",
+   "nome": "Risole de Carne",
+   "preco": 39.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "124",
+   "ordem": 5
+  },
+  {
+   "id": "porcoes-006",
+   "categoria": "porcoes",
+   "nome": "Croquete de Carne",
+   "preco": 39.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "125",
+   "ordem": 6
+  },
+  {
+   "id": "porcoes-007",
+   "categoria": "porcoes",
+   "nome": "Calabresa Acebolada",
+   "preco": 45.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "126",
+   "ordem": 7
+  },
+  {
+   "id": "porcoes-008",
+   "categoria": "porcoes",
+   "nome": "Batata Frita",
+   "preco": 29.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "127",
+   "ordem": 8
+  },
+  {
+   "id": "porcoes-009",
+   "categoria": "porcoes",
+   "nome": "Batata Frita c/ Cheddar e Bacon",
+   "preco": 36.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "128",
+   "ordem": 9
+  },
+  {
+   "id": "porcoes-010",
+   "categoria": "porcoes",
+   "nome": "Polenta Frita",
+   "preco": 20.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "129",
+   "ordem": 10
+  },
+  {
+   "id": "porcoes-011",
+   "categoria": "porcoes",
+   "nome": "Frango a Passarinho",
+   "preco": 37.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "130",
+   "ordem": 11
+  },
+  {
+   "id": "porcoes-012",
+   "categoria": "porcoes",
+   "nome": "Bolinha de Queijo",
+   "preco": 37.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "131",
+   "ordem": 12
+  },
+  {
+   "id": "porcoes-013",
+   "categoria": "porcoes",
+   "nome": "Bolinho de Carne Seca",
+   "preco": 45.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "132",
+   "ordem": 13
+  },
+  {
+   "id": "porcoes-014",
+   "categoria": "porcoes",
+   "nome": "Pimenta Carne c/ Queijo",
+   "preco": 34.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "133",
+   "ordem": 14
+  },
+  {
+   "id": "porcoes-015",
+   "categoria": "porcoes",
+   "nome": "Trouxinha Nordestina",
+   "preco": 39.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "134",
+   "ordem": 15
+  },
+  {
+   "id": "porcoes-016",
+   "categoria": "porcoes",
+   "nome": "Coxinha de Frango c/ Catupiry",
+   "preco": 39.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "135",
+   "ordem": 16
+  },
+  {
+   "id": "porcoes-017",
+   "categoria": "porcoes",
+   "nome": "Quibe com Cream Cheese",
+   "preco": 39.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "136",
+   "ordem": 17
+  },
+  {
+   "id": "porcoes-018",
+   "categoria": "porcoes",
+   "nome": "Bolinha de Catupiry",
+   "preco": 39.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "137",
+   "ordem": 18
+  },
+  {
+   "id": "lanches-000",
+   "categoria": "lanches",
+   "nome": "Lanche Made in Brazil",
+   "preco": 49.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "138",
+   "ordem": 0
+  },
+  {
+   "id": "lanches-001",
+   "categoria": "lanches",
+   "nome": "Lanche Camisa 10",
+   "preco": 44.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "139",
+   "ordem": 1
+  },
+  {
+   "id": "lanches-002",
+   "categoria": "lanches",
+   "nome": "Lanche Brasileirão",
+   "preco": 34.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "140",
+   "ordem": 2
+  },
+  {
+   "id": "lanches-003",
+   "categoria": "lanches",
+   "nome": "Lanche Brasileirinho",
+   "preco": 39.9,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "141",
+   "ordem": 3
+  },
+  {
+   "id": "chapas-000",
+   "categoria": "chapas",
+   "nome": "Alcatra Acebolada com Queijo",
+   "preco": 85.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "142",
+   "ordem": 0
+  },
+  {
+   "id": "chapas-001",
+   "categoria": "chapas",
+   "nome": "Chapa Brazil",
+   "preco": 95.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "143",
+   "ordem": 1
+  },
+  {
+   "id": "chapas-002",
+   "categoria": "chapas",
+   "nome": "Tilápia Brazil",
+   "preco": 89.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "144",
+   "ordem": 2
+  },
+  {
+   "id": "guarnicoes-000",
+   "categoria": "guarnicoes",
+   "nome": "Arroz",
+   "preco": 8.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "145",
+   "ordem": 0
+  },
+  {
+   "id": "guarnicoes-001",
+   "categoria": "guarnicoes",
+   "nome": "Mandioca Frita",
+   "preco": 10.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "146",
+   "ordem": 1
+  },
+  {
+   "id": "guarnicoes-002",
+   "categoria": "guarnicoes",
+   "nome": "Vinagrete",
+   "preco": 3.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "147",
+   "ordem": 2
+  },
+  {
+   "id": "molhos-extras-000",
+   "categoria": "molhos-extras",
+   "nome": "Geleia de Pimenta",
+   "preco": 4.99,
+   "ponto": "cozinha",
+   "pontoConfirmado": true,
+   "codigo": "148",
+   "ordem": 0
+  },
+  {
+   "id": "cervejas-000",
+   "categoria": "cervejas",
+   "nome": "Corona 600ml",
+   "preco": 20.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "149",
+   "ordem": 0
+  },
+  {
+   "id": "cervejas-001",
+   "categoria": "cervejas",
+   "nome": "Stella Artois Pure Gold 600ml",
+   "preco": 20.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "150",
+   "ordem": 1
+  },
+  {
+   "id": "cervejas-002",
+   "categoria": "cervejas",
+   "nome": "Original",
+   "preco": 17.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "151",
+   "ordem": 2
+  },
+  {
+   "id": "cervejas-003",
+   "categoria": "cervejas",
+   "nome": "Spaten 600ML",
+   "preco": 16.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "152",
+   "ordem": 3
+  },
+  {
+   "id": "cervejas-004",
+   "categoria": "cervejas",
+   "nome": "Budweiser 600ml",
+   "preco": 14.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "153",
+   "ordem": 4
+  },
+  {
+   "id": "cervejas-005",
+   "categoria": "cervejas",
+   "nome": "Antarctica Boa 600ML",
+   "preco": 13.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "154",
+   "ordem": 5
+  },
+  {
+   "id": "cervejas-006",
+   "categoria": "cervejas",
+   "nome": "Corona Ln",
+   "preco": 13.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "155",
+   "ordem": 6
+  },
+  {
+   "id": "cervejas-007",
+   "categoria": "cervejas",
+   "nome": "Stella Artois Pure gold ln",
+   "preco": 13.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "156",
+   "ordem": 7
+  },
+  {
+   "id": "cervejas-008",
+   "categoria": "cervejas",
+   "nome": "Budweiser Ln",
+   "preco": 10.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "157",
+   "ordem": 8
+  },
+  {
+   "id": "cervejas-009",
+   "categoria": "cervejas",
+   "nome": "Spaten Ln",
+   "preco": 10.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "158",
+   "ordem": 9
+  },
+  {
+   "id": "cervejas-010",
+   "categoria": "cervejas",
+   "nome": "Antarctica Boa Lata",
+   "preco": 7.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "159",
+   "ordem": 10
+  },
+  {
+   "id": "cervejas-011",
+   "categoria": "cervejas",
+   "nome": "Corona 0 Alcool Ln",
+   "preco": 11.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "160",
+   "ordem": 11
+  },
+  {
+   "id": "cervejas-012",
+   "categoria": "cervejas",
+   "nome": "Michelob Ultra Ln",
+   "preco": 11.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "161",
+   "ordem": 12
+  },
+  {
+   "id": "cervejas-013",
+   "categoria": "cervejas",
+   "nome": "CDB",
+   "preco": 3.0,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "162",
+   "ordem": 13
+  },
+  {
+   "id": "cervejas-014",
+   "categoria": "cervejas",
+   "nome": "Chopp Brahma 500ml C/ Groselha",
+   "preco": 17.9,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "163",
+   "ordem": 14
+  },
+  {
+   "id": "cervejas-015",
+   "categoria": "cervejas",
+   "nome": "Chopp Brahma 330ml",
+   "preco": 12.9,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "164",
+   "ordem": 15
+  },
+  {
+   "id": "cervejas-016",
+   "categoria": "cervejas",
+   "nome": "Chopp Brahma 330ml C/ Groselha",
+   "preco": 13.9,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "165",
+   "ordem": 16
+  },
+  {
+   "id": "cervejas-017",
+   "categoria": "cervejas",
+   "nome": "Chopp Brahma 500ml",
+   "preco": 16.9,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
+   "codigo": "166",
+   "ordem": 17
+  },
+  {
+   "id": "drinks-000",
+   "categoria": "drinks",
+   "nome": "Mate Loco",
+   "preco": 19.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "167",
+   "ordem": 0
+  },
+  {
+   "id": "drinks-001",
+   "categoria": "drinks",
+   "nome": "Blonde Citrus Highball",
+   "preco": 29.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "168",
+   "ordem": 1
+  },
+  {
+   "id": "drinks-002",
+   "categoria": "drinks",
+   "nome": "Tanqueray G&T",
+   "preco": 35.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "169",
+   "ordem": 2
+  },
+  {
+   "id": "drinks-003",
+   "categoria": "drinks",
+   "nome": "Tanqueray Royale G&T",
+   "preco": 38.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "170",
+   "ordem": 3
+  },
+  {
+   "id": "drinks-004",
+   "categoria": "drinks",
+   "nome": "Tanqueray Sevilla & Tônica",
+   "preco": 36.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "171",
+   "ordem": 4
+  },
+  {
+   "id": "drinks-005",
+   "categoria": "drinks",
+   "nome": "Meia Sete",
+   "preco": 35.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "172",
+   "ordem": 5
+  },
+  {
+   "id": "drinks-006",
+   "categoria": "drinks",
+   "nome": "Melancita",
+   "preco": 35.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "173",
+   "ordem": 6
+  },
+  {
+   "id": "drinks-007",
+   "categoria": "drinks",
+   "nome": "Tropical Gin",
+   "preco": 35.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "174",
+   "ordem": 7
+  },
+  {
+   "id": "drinks-008",
+   "categoria": "drinks",
+   "nome": "Gin Tônica",
+   "preco": 32.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "175",
+   "ordem": 8
+  },
+  {
+   "id": "drinks-009",
+   "categoria": "drinks",
+   "nome": "Soda Italiana",
+   "preco": 24.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "176",
+   "ordem": 9
+  },
+  {
+   "id": "drinks-010",
+   "categoria": "drinks",
+   "nome": "Smirnoff Mule",
+   "preco": 31.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "177",
+   "ordem": 10
+  },
+  {
+   "id": "drinks-011",
+   "categoria": "drinks",
+   "nome": "Sex on the Beach",
+   "preco": 28.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "178",
+   "ordem": 11
+  },
+  {
+   "id": "drinks-012",
+   "categoria": "drinks",
+   "nome": "Piña Colada",
+   "preco": 28.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "179",
+   "ordem": 12
+  },
+  {
+   "id": "drinks-013",
+   "categoria": "drinks",
+   "nome": "Two Lemon",
+   "preco": 25.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "180",
+   "ordem": 13
+  },
+  {
+   "id": "drinks-014",
+   "categoria": "drinks",
+   "nome": "Blue Margarita",
+   "preco": 35.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "181",
+   "ordem": 14
+  },
+  {
+   "id": "drinks-015",
+   "categoria": "drinks",
+   "nome": "Negroni",
+   "preco": 33.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "182",
+   "ordem": 15
+  },
+  {
+   "id": "drinks-016",
+   "categoria": "drinks",
+   "nome": "Honey Passion",
+   "preco": 29.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "183",
+   "ordem": 16
+  },
+  {
+   "id": "drinks-017",
+   "categoria": "drinks",
+   "nome": "Aperol Spritz",
+   "preco": 32.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "184",
+   "ordem": 17
+  },
+  {
+   "id": "drinks-018",
+   "categoria": "drinks",
+   "nome": "F.V Mule",
+   "preco": 25.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "185",
+   "ordem": 18
+  },
+  {
+   "id": "drinks-019",
+   "categoria": "drinks",
+   "nome": "Caipiroska Smirnoff",
+   "preco": 25.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "186",
+   "ordem": 19
+  },
+  {
+   "id": "drinks-020",
+   "categoria": "drinks",
+   "nome": "Caipiroska Absolut",
+   "preco": 27.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "187",
+   "ordem": 20
+  },
+  {
+   "id": "drinks-021",
+   "categoria": "drinks",
+   "nome": "Caipirinha",
+   "preco": 20.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "188",
+   "ordem": 21
+  },
+  {
+   "id": "drinks-022",
+   "categoria": "drinks",
+   "nome": "Saquerinha",
+   "preco": 25.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "189",
+   "ordem": 22
+  },
+  {
+   "id": "drinks-023",
+   "categoria": "drinks",
+   "nome": "Caipiroskas Especiais",
+   "preco": 25.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "190",
+   "ordem": 23
+  },
+  {
+   "id": "drinks-024",
+   "categoria": "drinks",
+   "nome": "Mojito",
+   "preco": 25.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "191",
+   "ordem": 24
+  },
+  {
+   "id": "drinks-025",
+   "categoria": "drinks",
+   "nome": "Coffe 43",
+   "preco": 29.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "192",
+   "ordem": 25
+  },
+  {
+   "id": "drinks-026",
+   "categoria": "drinks",
+   "nome": "Belina",
+   "preco": 25.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "193",
+   "ordem": 26
+  },
+  {
+   "id": "drinks-027",
+   "categoria": "drinks",
+   "nome": "Cosmopolita",
+   "preco": 29.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "194",
+   "ordem": 27
+  },
+  {
+   "id": "drinks-028",
+   "categoria": "drinks",
+   "nome": "Maçã Martini",
+   "preco": 29.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "195",
+   "ordem": 28
+  },
+  {
+   "id": "drinks-029",
+   "categoria": "drinks",
+   "nome": "The Classic - Vodka & Red Bull",
+   "preco": 32.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "196",
+   "ordem": 29
+  },
+  {
+   "id": "drinks-030",
+   "categoria": "drinks",
+   "nome": "Ballena Sensação",
+   "preco": 29.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "197",
+   "ordem": 30
+  },
+  {
+   "id": "doses-000",
+   "categoria": "doses",
+   "nome": "Dose Gin Tanqueray",
+   "preco": 24.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "198",
+   "ordem": 0
+  },
+  {
+   "id": "doses-001",
+   "categoria": "doses",
+   "nome": "Dose Absolut",
+   "preco": 24.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "199",
+   "ordem": 1
+  },
+  {
+   "id": "doses-002",
+   "categoria": "doses",
+   "nome": "Dose Smirnoff",
+   "preco": 19.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "200",
+   "ordem": 2
+  },
+  {
+   "id": "doses-003",
+   "categoria": "doses",
+   "nome": "Dose Red Label",
+   "preco": 25.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "201",
+   "ordem": 3
+  },
+  {
+   "id": "doses-004",
+   "categoria": "doses",
+   "nome": "Dose Ballantines",
+   "preco": 23.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "202",
+   "ordem": 4
+  },
+  {
+   "id": "doses-005",
+   "categoria": "doses",
+   "nome": "Dose Chivas 12 anos",
+   "preco": 29.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "203",
+   "ordem": 5
+  },
+  {
+   "id": "doses-006",
+   "categoria": "doses",
+   "nome": "Dose Licor 43",
+   "preco": 24.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "204",
+   "ordem": 6
+  },
+  {
+   "id": "doses-007",
+   "categoria": "doses",
+   "nome": "Dose Don Julio Tequila",
+   "preco": 34.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "205",
+   "ordem": 7
+  },
+  {
+   "id": "doses-008",
+   "categoria": "doses",
+   "nome": "Dose Tequila Ouro",
+   "preco": 22.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "206",
+   "ordem": 8
+  },
+  {
+   "id": "doses-009",
+   "categoria": "doses",
+   "nome": "Dose Tequila Prata",
+   "preco": 24.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "207",
+   "ordem": 9
+  },
+  {
+   "id": "doses-010",
+   "categoria": "doses",
+   "nome": "Dose Campari",
+   "preco": 18.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "208",
+   "ordem": 10
+  },
+  {
+   "id": "doses-011",
+   "categoria": "doses",
+   "nome": "Dose Ballena",
+   "preco": 24.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "209",
+   "ordem": 11
+  },
+  {
+   "id": "doses-012",
+   "categoria": "doses",
+   "nome": "Dose Ballena Chocolate e Caramelo",
+   "preco": 24.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "210",
+   "ordem": 12
+  },
+  {
+   "id": "doses-013",
+   "categoria": "doses",
+   "nome": "Dose Bananinha",
+   "preco": 24.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "211",
+   "ordem": 13
+  },
+  {
+   "id": "doses-014",
+   "categoria": "doses",
+   "nome": "Dose Grand Old Parr",
+   "preco": 29.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "212",
+   "ordem": 14
+  },
+  {
+   "id": "doses-015",
+   "categoria": "doses",
+   "nome": "Dose Cachaça Seleta",
+   "preco": 12.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "213",
+   "ordem": 15
+  },
+  {
+   "id": "doses-016",
+   "categoria": "doses",
+   "nome": "Dose Cachaça Sagatiba",
+   "preco": 12.99,
+   "ponto": "drink",
+   "pontoConfirmado": true,
+   "codigo": "214",
+   "ordem": 16
+  },
+  {
+   "id": "refrigerantes-000",
+   "categoria": "refrigerantes",
+   "nome": "Pespi Black",
+   "preco": 8.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "215",
+   "ordem": 0
+  },
+  {
+   "id": "refrigerantes-001",
+   "categoria": "refrigerantes",
+   "nome": "Sukita Laranja",
+   "preco": 8.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "216",
+   "ordem": 1
+  },
+  {
+   "id": "refrigerantes-002",
+   "categoria": "refrigerantes",
+   "nome": "Pepsi",
+   "preco": 8.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "217",
+   "ordem": 2
+  },
+  {
+   "id": "refrigerantes-003",
+   "categoria": "refrigerantes",
+   "nome": "Soda Limao",
+   "preco": 8.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "218",
+   "ordem": 3
+  },
+  {
+   "id": "refrigerantes-004",
+   "categoria": "refrigerantes",
+   "nome": "H2O Limoneto",
+   "preco": 8.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "219",
+   "ordem": 4
+  },
+  {
+   "id": "refrigerantes-005",
+   "categoria": "refrigerantes",
+   "nome": "H2O Limão",
+   "preco": 8.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "220",
+   "ordem": 5
+  },
+  {
+   "id": "refrigerantes-006",
+   "categoria": "refrigerantes",
+   "nome": "Coca-Cola lata",
+   "preco": 8.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "221",
+   "ordem": 6
+  },
+  {
+   "id": "refrigerantes-007",
+   "categoria": "refrigerantes",
+   "nome": "Coca-Cola Zero lata",
+   "preco": 8.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "222",
+   "ordem": 7
+  },
+  {
+   "id": "refrigerantes-008",
+   "categoria": "refrigerantes",
+   "nome": "Guaraná Antarctica lata",
+   "preco": 8.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "223",
+   "ordem": 8
+  },
+  {
+   "id": "refrigerantes-009",
+   "categoria": "refrigerantes",
+   "nome": "Guaraná Antarctica Zero lata",
+   "preco": 8.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "224",
+   "ordem": 9
+  },
+  {
+   "id": "energeticos-000",
+   "categoria": "energeticos",
+   "nome": "Red Bull Energy Drink",
+   "preco": 15.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "225",
+   "ordem": 0
+  },
+  {
+   "id": "energeticos-001",
+   "categoria": "energeticos",
+   "nome": "Red Bull Frutas Vermelhas",
+   "preco": 15.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "226",
+   "ordem": 1
+  },
+  {
+   "id": "energeticos-002",
+   "categoria": "energeticos",
+   "nome": "Red Bull Sugarfree",
+   "preco": 15.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "227",
+   "ordem": 2
+  },
+  {
+   "id": "energeticos-003",
+   "categoria": "energeticos",
+   "nome": "Red Bull Tropical",
+   "preco": 15.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "228",
+   "ordem": 3
+  },
+  {
+   "id": "energeticos-004",
+   "categoria": "energeticos",
+   "nome": "Red Bull Melancia",
+   "preco": 15.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "229",
+   "ordem": 4
+  },
+  {
+   "id": "aguas-000",
+   "categoria": "aguas",
+   "nome": "Água sem gás",
+   "preco": 4.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "230",
+   "ordem": 0
+  },
+  {
+   "id": "aguas-001",
+   "categoria": "aguas",
+   "nome": "Água com gás",
+   "preco": 5.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "231",
+   "ordem": 1
+  },
+  {
+   "id": "aguas-002",
+   "categoria": "aguas",
+   "nome": "Água Tônica",
+   "preco": 7.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "232",
+   "ordem": 2
+  },
+  {
+   "id": "aguas-003",
+   "categoria": "aguas",
+   "nome": "Água de coco",
+   "preco": 9.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "233",
+   "ordem": 3
+  },
+  {
+   "id": "sucos-000",
+   "categoria": "sucos",
+   "nome": "Suco de Limão Cremoso",
+   "preco": 15.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "234",
+   "ordem": 0
+  },
+  {
+   "id": "sucos-001",
+   "categoria": "sucos",
+   "nome": "Suco de Maracujá Cremoso",
+   "preco": 15.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "235",
+   "ordem": 1
+  },
+  {
+   "id": "sucos-002",
+   "categoria": "sucos",
+   "nome": "Suco Morango Cremoso",
+   "preco": 15.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "236",
+   "ordem": 2
+  },
+  {
+   "id": "sucos-003",
+   "categoria": "sucos",
+   "nome": "Suco Natural de Abacaxi",
+   "preco": 9.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "237",
+   "ordem": 3
+  },
+  {
+   "id": "sucos-004",
+   "categoria": "sucos",
+   "nome": "Suco Natural de Abacaxi com Hortelã",
+   "preco": 11.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "238",
+   "ordem": 4
+  },
+  {
+   "id": "sucos-005",
+   "categoria": "sucos",
+   "nome": "Suco Natural de Limão",
+   "preco": 9.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "239",
+   "ordem": 5
+  },
+  {
+   "id": "sucos-006",
+   "categoria": "sucos",
+   "nome": "Suco Natural de Maracuja",
+   "preco": 11.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "240",
+   "ordem": 6
+  },
+  {
+   "id": "sucos-007",
+   "categoria": "sucos",
+   "nome": "Suco Del Valle Pêssego lata",
+   "preco": 8.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "241",
+   "ordem": 7
+  },
+  {
+   "id": "sucos-008",
+   "categoria": "sucos",
+   "nome": "Suco Del Valle Uva lata",
+   "preco": 8.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "242",
+   "ordem": 8
+  },
+  {
+   "id": "sucos-009",
+   "categoria": "sucos",
+   "nome": "Suco Del Valle Maracujá lata",
+   "preco": 8.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "243",
+   "ordem": 9
+  },
+  {
+   "id": "sucos-010",
+   "categoria": "sucos",
+   "nome": "Suco de Laranja Natural",
+   "preco": 9.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "244",
+   "ordem": 10
+  },
+  {
+   "id": "combos-000",
+   "categoria": "combos",
+   "nome": "Campari",
+   "preco": 149.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "245",
+   "ordem": 0
+  },
+  {
+   "id": "combos-001",
+   "categoria": "combos",
+   "nome": "Gold Label + 5 Acompanhamentos",
+   "preco": 629.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "246",
+   "ordem": 1
+  },
+  {
+   "id": "combos-002",
+   "categoria": "combos",
+   "nome": "Gordon´s Gin + 5 Acompanhamentos",
+   "preco": 269.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "247",
+   "ordem": 2
+  },
+  {
+   "id": "combos-003",
+   "categoria": "combos",
+   "nome": "Tanquerat Royale",
+   "preco": 349.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "248",
+   "ordem": 3
+  },
+  {
+   "id": "combos-004",
+   "categoria": "combos",
+   "nome": "Tanqueray Sevilla",
+   "preco": 349.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "249",
+   "ordem": 4
+  },
+  {
+   "id": "combos-005",
+   "categoria": "combos",
+   "nome": "Smirnoff + 5 Acompanhamentos",
+   "preco": 189.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "250",
+   "ordem": 5
+  },
+  {
+   "id": "combos-006",
+   "categoria": "combos",
+   "nome": "Absolut + 5 Acomphamentos",
+   "preco": 269.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "251",
+   "ordem": 6
+  },
+  {
+   "id": "combos-007",
+   "categoria": "combos",
+   "nome": "Red Label + 5 Acompanhamentos",
+   "preco": 284.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "252",
+   "ordem": 7
+  },
+  {
+   "id": "combos-008",
+   "categoria": "combos",
+   "nome": "Ballantines + 5 Acompanhamentos",
+   "preco": 279.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "253",
+   "ordem": 8
+  },
+  {
+   "id": "combos-009",
+   "categoria": "combos",
+   "nome": "Chivas 12 anos + 5 Acompanhamentos",
+   "preco": 379.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "254",
+   "ordem": 9
+  },
+  {
+   "id": "combos-010",
+   "categoria": "combos",
+   "nome": "Ballena",
+   "preco": 299.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "255",
+   "ordem": 10
+  },
+  {
+   "id": "combos-011",
+   "categoria": "combos",
+   "nome": "Grand Old Parr + 5 Acompanhamentos",
+   "preco": 399.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "256",
+   "ordem": 11
+  },
+  {
+   "id": "combos-012",
+   "categoria": "combos",
+   "nome": "Black Label + 5 Acompanhamentos",
+   "preco": 429.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "257",
+   "ordem": 12
+  },
+  {
+   "id": "combos-013",
+   "categoria": "combos",
+   "nome": "Tanqueray + 5 Acompanhamentos",
+   "preco": 329.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "258",
+   "ordem": 13
+  },
+  {
+   "id": "combos-014",
+   "categoria": "combos",
+   "nome": "Licor Banana Gold",
+   "preco": 139.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "259",
+   "ordem": 14
+  },
+  {
+   "id": "combos-015",
+   "categoria": "combos",
+   "nome": "Licor 43",
+   "preco": 299.99,
+   "ponto": "drink",
+   "pontoConfirmado": false,
+   "codigo": "260",
+   "ordem": 15
+  },
+  {
+   "id": "sorvetes-000",
+   "categoria": "sorvetes",
+   "nome": "Corneto Crocante",
+   "preco": 10.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "261",
+   "ordem": 0
+  },
+  {
+   "id": "sorvetes-001",
+   "categoria": "sorvetes",
+   "nome": "Eskibon Bombom",
+   "preco": 9.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "262",
+   "ordem": 1
+  },
+  {
+   "id": "sorvetes-002",
+   "categoria": "sorvetes",
+   "nome": "Eskibon mini bombom",
+   "preco": 15.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "263",
+   "ordem": 2
+  },
+  {
+   "id": "sorvetes-003",
+   "categoria": "sorvetes",
+   "nome": "Eskibon mini Chicabon",
+   "preco": 15.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "264",
+   "ordem": 3
+  },
+  {
+   "id": "sorvetes-004",
+   "categoria": "sorvetes",
+   "nome": "Frutily Morango",
+   "preco": 5.49,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "265",
+   "ordem": 4
+  },
+  {
+   "id": "sorvetes-005",
+   "categoria": "sorvetes",
+   "nome": "Fruttare Limão",
+   "preco": 7.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "266",
+   "ordem": 5
+  },
+  {
+   "id": "sorvetes-006",
+   "categoria": "sorvetes",
+   "nome": "Fruttare Uva",
+   "preco": 7.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "267",
+   "ordem": 6
+  },
+  {
+   "id": "sorvetes-007",
+   "categoria": "sorvetes",
+   "nome": "Kibon Chicabon",
+   "preco": 9.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "268",
+   "ordem": 7
+  },
+  {
+   "id": "sorvetes-008",
+   "categoria": "sorvetes",
+   "nome": "Kibon Tablito",
+   "preco": 10.49,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "269",
+   "ordem": 8
+  },
+  {
+   "id": "sorvetes-009",
+   "categoria": "sorvetes",
+   "nome": "Magnum Avelã",
+   "preco": 19.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "270",
+   "ordem": 9
+  },
+  {
+   "id": "sorvetes-010",
+   "categoria": "sorvetes",
+   "nome": "Magnum Branco",
+   "preco": 18.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "271",
+   "ordem": 10
+  },
+  {
+   "id": "sorvetes-011",
+   "categoria": "sorvetes",
+   "nome": "Magnum Clássico",
+   "preco": 18.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "272",
+   "ordem": 11
+  },
+  {
+   "id": "sorvetes-012",
+   "categoria": "sorvetes",
+   "nome": "Magnum Cookies & Cream Bombom",
+   "preco": 20.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "273",
+   "ordem": 12
+  },
+  {
+   "id": "sorvetes-013",
+   "categoria": "sorvetes",
+   "nome": "Magnum Cookies Cream",
+   "preco": 19.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "274",
+   "ordem": 13
+  },
+  {
+   "id": "sorvetes-014",
+   "categoria": "sorvetes",
+   "nome": "Magnum Pistache",
+   "preco": 19.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "275",
+   "ordem": 14
+  },
+  {
+   "id": "sorvetes-015",
+   "categoria": "sorvetes",
+   "nome": "Magnum Pistache Bombom",
+   "preco": 20.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "276",
+   "ordem": 15
+  },
+  {
+   "id": "sorvetes-016",
+   "categoria": "sorvetes",
+   "nome": "Palito Brigadeiro",
+   "preco": 9.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "277",
+   "ordem": 16
+  },
+  {
+   "id": "sorvetes-017",
+   "categoria": "sorvetes",
+   "nome": "Picole Guarana",
+   "preco": 7.99,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "278",
+   "ordem": 17
+  },
+  {
+   "id": "sorvetes-018",
+   "categoria": "sorvetes",
+   "nome": "Tablito 3 Chocolates",
+   "preco": 10.49,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "279",
+   "ordem": 18
+  },
+  {
+   "id": "sorvetes-019",
+   "categoria": "sorvetes",
+   "nome": "Tablito Maximo Avelã",
+   "preco": 10.49,
+   "ponto": "cerveja",
+   "pontoConfirmado": false,
+   "codigo": "280",
+   "ordem": 19
+  }
+ ],
+ "colaboradores": [
+  {
+   "id": "c1",
+   "nome": "Beto",
+   "funcao": "Atendente"
+  },
+  {
+   "id": "c2",
+   "nome": "Eduardo",
+   "funcao": "Atendente"
+  },
+  {
+   "id": "c3",
+   "nome": "Jenifer",
+   "funcao": "Atendente"
+  },
+  {
+   "id": "c4",
+   "nome": "Leonardo",
+   "funcao": "Atendente"
+  },
+  {
+   "id": "c5",
+   "nome": "Helen",
+   "funcao": "Bar"
+  },
+  {
+   "id": "c6",
+   "nome": "Angela",
+   "funcao": "Cozinha"
+  },
+  {
+   "id": "c7",
+   "nome": "Karolyne",
+   "funcao": "Cozinha"
+  },
+  {
+   "id": "c8",
+   "nome": "Leticia",
+   "funcao": "Cozinha"
+  },
+  {
+   "id": "c9",
+   "nome": "Veronica",
+   "funcao": "Cozinha"
+  },
+  {
+   "id": "c10",
+   "nome": "Dani",
+   "funcao": "Outro"
+  },
+  {
+   "id": "c11",
+   "nome": "Jennifer",
+   "funcao": "Outro"
+  }
+ ]
+}

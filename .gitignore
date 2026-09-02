@@ -4,6 +4,7 @@ app-android/build/
 app-android/app/build/
 app-android/local.properties
 app-android/.idea/
+app-android/.kotlin/
 *.iml
 .DS_Store
 
