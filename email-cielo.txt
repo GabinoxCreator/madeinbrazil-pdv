@@ -1,0 +1,40 @@
+Para: integracaosmart@cielo.com.br
+Assunto: Dúvida de integração — instalação de app em teste e solicitação de terminal (CNPJ 53.035.204/0001-24)
+
+Boa tarde,
+
+Sou responsável pelo Made in Brazil Bar LTDA (CNPJ 53.035.204/0001-24) e estamos
+desenvolvendo um aplicativo próprio de comandas para uso interno no nosso salão,
+para rodar nos terminais Cielo Smart que já operam na nossa loja.
+
+Já realizamos o cadastro no Portal de Desenvolvedores e no Dev Console, e o
+aplicativo "Made in Brazil Bar PDV" foi registrado e aprovado, com Client-ID e
+Access Token emitidos.
+
+Tenho duas dúvidas:
+
+1) Podemos instalar o aplicativo em fase de desenvolvimento/teste diretamente
+nos terminais que já usamos em produção nesta loja, via QR Code do Dev Console
+e o app "Test Your App"? Ou é necessário um terminal de desenvolvimento
+separado, ativado em ambiente de Certificação?
+
+2) Caso seja necessário um terminal de desenvolvimento, gostaria de solicitá-lo.
+Seguem os dados:
+
+   Razão social: Made in Brazil Bar LTDA
+   CNPJ: 53.035.204/0001-24
+   Nome do solicitante: Gabriel Fernandes
+   CPF do integrador/solicitante: [PREENCHER]
+   Endereço completo: [PREENCHER]
+   Cidade / UF / CEP: [PREENCHER]
+   Telefone: [PREENCHER]
+   E-mail: contato.madeinbrazilbar@gmail.com
+
+Um dado do nosso inventário que pode ajudar: um dos terminais em uso é um
+Positivo L400, número de série 4AK38M35I, loja 9400.
+
+Fico à disposição para qualquer informação adicional.
+
+Atenciosamente,
+Gabriel Fernandes
+Made in Brazil Bar LTDA

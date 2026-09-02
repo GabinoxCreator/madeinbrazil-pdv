@@ -61,8 +61,8 @@ private fun TelaDiagnostico() {
         Cabecalho()
 
         Text(
-            "Antes de qualquer coisa, a impressao precisa funcionar. " +
-                "Conecte este aparelho no Wi-Fi do bar e teste as termicas.",
+            "Antes de qualquer coisa, a impressão precisa funcionar. " +
+                "Conecte este aparelho no Wi-Fi do bar e teste as térmicas.",
             style = MaterialTheme.typography.bodyMedium
         )
 
@@ -80,13 +80,13 @@ private fun TelaDiagnostico() {
             onClick = {
                 ocupado = true
                 val nome = Rede.pontosConhecidos[ip] ?: "Desconhecido"
-                log("Enviando cupom de teste para $ip ($nome)...")
+                log("Enviando cupom de teste para $ip ($nome)…")
                 escopo.launch {
                     when (val r = Impressora.imprimir(ip, Cupons.teste(nome, ip))) {
                         is Impressora.Resultado.Ok ->
-                            log("OK - enviado. Confira se saiu na termica.")
+                            log("OK — enviado. Confira se saiu na térmica.")
                         is Impressora.Resultado.Falha ->
-                            log("FALHOU - ${r.motivo}")
+                            log("FALHOU — ${r.motivo}")
                     }
                     ocupado = false
                 }
@@ -98,15 +98,15 @@ private fun TelaDiagnostico() {
         OutlinedButton(
             onClick = {
                 ocupado = true
-                log("Procurando impressoras na rede...")
+                log("Procurando impressoras na rede…")
                 escopo.launch {
                     val faixa = Rede.faixaLocal()
                     if (faixa == null) {
-                        log("Sem rede local. Este aparelho esta no Wi-Fi?")
+                        log("Sem rede local. Este aparelho está no Wi-Fi?")
                     } else {
                         log("Rede deste aparelho: $faixa.x")
                         if (faixa != "192.168.0") {
-                            log("Atencao: a especificacao mapeou as termicas em 192.168.0.x")
+                            log("Atenção: a especificação mapeou as térmicas em 192.168.0.x")
                         }
                         val achadas = Rede.procurarImpressoras(faixa)
                         if (achadas.isEmpty()) {
@@ -160,6 +160,6 @@ private fun Cabecalho() {
             fontWeight = FontWeight.Bold,
             fontSize = 22.sp
         )
-        Text("PDV · diagnostico de impressao", color = Color.White, fontSize = 13.sp)
+        Text("PDV · diagnóstico de impressão", color = Color.White, fontSize = 13.sp)
     }
 }

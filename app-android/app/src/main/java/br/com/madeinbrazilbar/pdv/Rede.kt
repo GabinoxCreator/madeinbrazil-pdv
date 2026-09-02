@@ -49,7 +49,7 @@ object Rede {
     /** O que a especificacao levantou em campo em 31/08/2026. */
     val pontosConhecidos = mapOf(
         "192.168.0.70" to "Caixa",
-        "192.168.0.71" to "Cozinha (IP nao confirmado)",
+        "192.168.0.71" to "Cozinha (IP não confirmado)",
         "192.168.0.72" to "Bar de drink",
         "192.168.0.73" to "Bar de cerveja"
     )
