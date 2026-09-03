@@ -1,5 +1,5 @@
 {
- "_aviso": "MASSA DE TESTE. Copia do cardapio real do bar em 02/09/2026, para desenvolver sem depender do banco do bar. Nao e integracao. Substituir quando o banco do PDV existir.",
+ "_aviso": "MASSA DE TESTE. Copia do cardapio real do bar em 02/09/2026, para desenvolver sem depender do banco do bar. Nao e integracao. Substituir quando o banco do PDV existir. IPs das 4 termicas confirmados em campo em 03/09/2026.",
  "pontosProducao": [
   {
    "id": "caixa",
@@ -27,7 +27,7 @@
    "nome": "Cozinha",
    "ip": "192.168.0.71",
    "porta": 9100,
-   "ipConfirmado": false
+   "ipConfirmado": true
   }
  ],
  "categorias": [
