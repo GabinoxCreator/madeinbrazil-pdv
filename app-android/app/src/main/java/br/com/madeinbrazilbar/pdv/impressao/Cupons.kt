@@ -4,7 +4,12 @@ import br.com.madeinbrazilbar.pdv.dados.Comanda
 import br.com.madeinbrazilbar.pdv.dados.Configuracao
 import br.com.madeinbrazilbar.pdv.dados.Conta
 import br.com.madeinbrazilbar.pdv.dados.Dinheiro
+import br.com.madeinbrazilbar.pdv.dados.Fechamento
 import br.com.madeinbrazilbar.pdv.dados.ItemLancado
+import br.com.madeinbrazilbar.pdv.dados.MetodoPagamento
+import br.com.madeinbrazilbar.pdv.dados.Pagamento
+import br.com.madeinbrazilbar.pdv.dados.SaldoComanda
+import br.com.madeinbrazilbar.pdv.dados.SessaoCaixa
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -117,6 +122,112 @@ object Cupons {
             negrito(true)
             linha(Configuracao.RODAPE_CUPOM)
             negrito(false)
+        }
+        .avancar(3)
+        .cortar()
+
+    /**
+     * Cupom de fechamento de caixa: a conferencia que o operador confere
+     * contra a gaveta e contra o extrato da maquininha.
+     */
+    fun fechamentoCaixa(
+        sessao: SessaoCaixa,
+        f: Fechamento,
+        operador: String,
+        quando: Long
+    ): EscPos = EscPos()
+        .inicializar()
+        .centralizado()
+        .dobrado(true).negrito(true)
+        .linha(Configuracao.CABECALHO_CUPOM)
+        .dobrado(false).negrito(false)
+        .linha("FECHAMENTO DE CAIXA")
+        .separador('=')
+        .aEsquerda()
+        .apply {
+            colunas("Abertura", horario.format(Date(sessao.abertaEm)))
+            colunas("Aberto por", sessao.abertaPor)
+            colunas("Fechamento", horario.format(Date(quando)))
+            colunas("Fechado por", operador)
+            separador()
+
+            negrito(true).linha("RECEBIDO POR FORMA").negrito(false)
+            for (metodo in MetodoPagamento.TODOS) {
+                val v = f.porMetodo[metodo] ?: 0L
+                if (v > 0) colunas("  " + MetodoPagamento.rotulo(metodo), Dinheiro.formatar(v))
+            }
+            separador()
+            colunas("Total recebido", Dinheiro.formatar(f.totalRecebidoCentavos))
+            colunas("Comandas recebidas", f.comandasRecebidas.toString())
+            separador()
+
+            negrito(true).linha("DINHEIRO NA GAVETA").negrito(false)
+            colunas("  Fundo de troco", Dinheiro.formatar(f.fundoTrocoCentavos))
+            if (f.suprimentosCentavos > 0)
+                colunas("  Suprimentos", Dinheiro.formatar(f.suprimentosCentavos))
+            if (f.sangriasCentavos > 0)
+                colunas("  Sangrias", "-" + Dinheiro.formatar(f.sangriasCentavos))
+            colunas("  Recebido em dinheiro", Dinheiro.formatar(f.dinheiroRecebidoCentavos))
+            separador()
+            negrito(true)
+            colunas("ESPERADO", Dinheiro.formatar(f.esperadoEmDinheiroCentavos))
+            negrito(false)
+            f.contadoCentavos?.let { colunas("CONTADO", Dinheiro.formatar(it)) }
+            f.diferencaCentavos?.let { d ->
+                separador('=')
+                negrito(true)
+                val rotulo = when {
+                    d == 0L -> "SEM DIFERENCA"
+                    d > 0 -> "SOBRA"
+                    else -> "FALTA"
+                }
+                colunas(rotulo, Dinheiro.formatar(if (d < 0) -d else d))
+                negrito(false)
+            }
+            sessao.observacao?.takeIf { it.isNotBlank() }?.let {
+                separador()
+                paragrafo("Obs: $it")
+            }
+            linha()
+            linha("Conferido por: ____________________")
+            linha()
+            centralizado()
+            linha(Configuracao.RODAPE_CUPOM)
+        }
+        .avancar(3)
+        .cortar()
+
+    /** Comprovante de recebimento entregue ao cliente. */
+    fun comprovanteRecebimento(
+        comanda: Comanda,
+        pagamento: Pagamento,
+        saldo: SaldoComanda,
+        quando: Long
+    ): EscPos = EscPos()
+        .inicializar()
+        .centralizado()
+        .negrito(true).linha(Configuracao.CABECALHO_CUPOM).negrito(false)
+        .linha("COMPROVANTE DE PAGAMENTO")
+        .separador('=')
+        .aEsquerda()
+        .apply {
+            colunas("Comanda", comanda.numero.toString())
+            comanda.mesa?.let { colunas("Mesa", it) }
+            colunas("Forma", MetodoPagamento.rotulo(pagamento.metodo))
+            colunas("Hora", horario.format(Date(quando)))
+            separador()
+            negrito(true)
+            colunas("VALOR PAGO", Dinheiro.formatar(pagamento.valorCentavos))
+            negrito(false)
+            if (pagamento.trocoCentavos > 0)
+                colunas("Troco", Dinheiro.formatar(pagamento.trocoCentavos))
+            if (!saldo.quitada)
+                colunas("Falta", Dinheiro.formatar(saldo.faltaCentavos))
+            separador()
+            colunas("Recebido por", pagamento.recebidoPor)
+            linha()
+            centralizado()
+            linha(Configuracao.RODAPE_CUPOM)
         }
         .avancar(3)
         .cortar()

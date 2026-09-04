@@ -52,7 +52,8 @@ private fun AppPdv() {
                     vm = vm,
                     aoAbrirComanda = { id -> nav.navigate("comanda/$id") },
                     aoIrParaDiagnostico = { nav.navigate("diagnostico") },
-                    aoIrParaFila = { nav.navigate("fila") }
+                    aoIrParaFila = { nav.navigate("fila") },
+                    aoIrParaCaixa = { nav.navigate("caixa") }
                 )
             }
             composable(
@@ -70,6 +71,9 @@ private fun AppPdv() {
             }
             composable("fila") {
                 TelaFilaImpressao(vm = vm, aoVoltar = { nav.popBackStack() })
+            }
+            composable("caixa") {
+                TelaCaixa(vm = vm, aoVoltar = { nav.popBackStack() })
             }
         }
     }

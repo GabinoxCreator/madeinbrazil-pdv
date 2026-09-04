@@ -18,6 +18,28 @@ class PdvViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = BancoLocal.obter(app).dao()
     private val repo = Repositorio(dao, cardapio)
 
+    private val caixa = RepositorioCaixa(dao)
+
+    val sessaoAberta: StateFlow<SessaoCaixa?> = caixa.sessaoAberta()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    fun movimentos(sessaoId: Long) = caixa.movimentos(sessaoId)
+    fun pagamentosDaComanda(comandaId: Long) = caixa.pagamentosDaComanda(comandaId)
+
+    fun abrirCaixa(fundoCentavos: Long) = rodar { caixa.abrirCaixa(fundoCentavos, _operador.value) }
+
+    fun registrarMovimento(tipo: String, valorCentavos: Long, motivo: String) =
+        rodar { caixa.registrarMovimento(tipo, valorCentavos, motivo, _operador.value) }
+
+    fun receber(comandaId: Long, metodo: String, valorCentavos: Long, recebidoCentavos: Long?) =
+        rodar { caixa.receber(comandaId, metodo, valorCentavos, recebidoCentavos, _operador.value) }
+
+    fun fecharCaixa(contadoCentavos: Long, observacao: String?) =
+        rodar { caixa.fecharCaixa(contadoCentavos, _operador.value, observacao) }
+
+    suspend fun apuracao(contadoCentavos: Long? = null): Fechamento? = caixa.apuracao(contadoCentavos)
+    suspend fun saldoDe(comandaId: Long): SaldoComanda? = caixa.saldo(comandaId)
+
     /** Motor de impressao: roda em segundo plano, a tela nunca espera termica. */
     private val fila = FilaImpressao(dao, cardapio, viewModelScope).also { it.iniciar() }
 

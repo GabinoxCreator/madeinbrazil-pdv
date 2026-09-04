@@ -11,8 +11,11 @@ import androidx.room.RoomDatabase
  * A sincronizacao com o servidor entra depois - nada aqui depende dela.
  */
 @Database(
-    entities = [Comanda::class, Pedido::class, ItemLancado::class, TrabalhoImpressao::class],
-    version = 2,
+    entities = [
+        Comanda::class, Pedido::class, ItemLancado::class, TrabalhoImpressao::class,
+        SessaoCaixa::class, MovimentoCaixa::class, Pagamento::class
+    ],
+    version = 3,
     exportSchema = false
 )
 abstract class BancoLocal : RoomDatabase() {

@@ -15,6 +15,9 @@ interface PdvDao {
     @Query("SELECT * FROM comandas WHERE status IN ('aberta','fechada') ORDER BY numero")
     fun comandasVivas(): Flow<List<Comanda>>
 
+    @Query("SELECT * FROM comandas WHERE status IN ('aberta','fechada') ORDER BY numero")
+    suspend fun comandasVivasAgora(): List<Comanda>
+
     @Query("SELECT * FROM comandas WHERE id = :id")
     fun comanda(id: Long): Flow<Comanda?>
 
@@ -59,6 +62,50 @@ interface PdvDao {
     @Query("""UPDATE itens SET status = 'cancelado', canceladoPor = :por,
               canceladoMotivo = :motivo, canceladoEm = :quando WHERE id = :itemId""")
     suspend fun cancelarItem(itemId: Long, por: String, motivo: String, quando: Long)
+
+    // ---------------- caixa ----------------
+
+    @Query("SELECT * FROM sessoes_caixa WHERE status = 'aberta' LIMIT 1")
+    fun sessaoAberta(): Flow<SessaoCaixa?>
+
+    @Query("SELECT * FROM sessoes_caixa WHERE status = 'aberta' LIMIT 1")
+    suspend fun sessaoAbertaAgora(): SessaoCaixa?
+
+    @Query("SELECT * FROM sessoes_caixa ORDER BY abertaEm DESC LIMIT 30")
+    fun historicoSessoes(): Flow<List<SessaoCaixa>>
+
+    @Query("SELECT * FROM sessoes_caixa ORDER BY abertaEm DESC LIMIT 30")
+    suspend fun historicoSessoesAgora(): List<SessaoCaixa>
+
+    @Insert
+    suspend fun inserirSessao(s: SessaoCaixa): Long
+
+    @Update
+    suspend fun atualizarSessao(s: SessaoCaixa)
+
+    @Insert
+    suspend fun inserirMovimento(m: MovimentoCaixa): Long
+
+    @Query("SELECT * FROM movimentos_caixa WHERE sessaoId = :sessaoId ORDER BY criadoEm")
+    fun movimentosDaSessao(sessaoId: Long): Flow<List<MovimentoCaixa>>
+
+    @Query("SELECT * FROM movimentos_caixa WHERE sessaoId = :sessaoId ORDER BY criadoEm")
+    suspend fun movimentosDaSessaoAgora(sessaoId: Long): List<MovimentoCaixa>
+
+    @Insert
+    suspend fun inserirPagamento(p: Pagamento): Long
+
+    @Query("SELECT * FROM pagamentos WHERE sessaoId = :sessaoId ORDER BY recebidoEm")
+    suspend fun pagamentosDaSessao(sessaoId: Long): List<Pagamento>
+
+    @Query("SELECT * FROM pagamentos WHERE comandaId = :comandaId ORDER BY recebidoEm")
+    fun pagamentosDaComanda(comandaId: Long): Flow<List<Pagamento>>
+
+    @Query("SELECT * FROM pagamentos WHERE comandaId = :comandaId ORDER BY recebidoEm")
+    suspend fun pagamentosDaComandaAgora(comandaId: Long): List<Pagamento>
+
+    @Query("SELECT COALESCE(SUM(valorCentavos),0) FROM pagamentos WHERE comandaId = :comandaId")
+    suspend fun totalPagoDaComanda(comandaId: Long): Long
 
     // ---------------- fila de impressao ----------------
 

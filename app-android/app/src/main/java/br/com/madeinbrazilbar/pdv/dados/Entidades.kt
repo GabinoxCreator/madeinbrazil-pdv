@@ -120,3 +120,88 @@ data class TrabalhoImpressao(
     }
     override fun hashCode(): Int = id.hashCode()
 }
+
+// ===================================================================
+// CAIXA
+// ===================================================================
+
+object StatusSessao {
+    const val ABERTA = "aberta"
+    const val FECHADA = "fechada"
+}
+
+object TipoMovimento {
+    const val SANGRIA = "sangria"        // tira dinheiro da gaveta
+    const val SUPRIMENTO = "suprimento"  // poe dinheiro na gaveta
+}
+
+object MetodoPagamento {
+    const val DINHEIRO = "dinheiro"
+    const val PIX = "pix"
+    const val CREDITO = "credito"
+    const val DEBITO = "debito"
+    const val VOUCHER = "voucher"
+
+    val TODOS = listOf(DINHEIRO, PIX, CREDITO, DEBITO, VOUCHER)
+
+    fun rotulo(m: String) = when (m) {
+        DINHEIRO -> "Dinheiro"
+        PIX -> "Pix"
+        CREDITO -> "Crédito"
+        DEBITO -> "Débito"
+        VOUCHER -> "Voucher"
+        else -> m
+    }
+}
+
+@Entity(tableName = "sessoes_caixa", indices = [Index("status")])
+data class SessaoCaixa(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val abertaPor: String,
+    val abertaEm: Long,
+    /** Fundo de troco colocado na gaveta na abertura. */
+    val fundoTrocoCentavos: Long,
+    val fechadaPor: String? = null,
+    val fechadaEm: Long? = null,
+    /** Dinheiro efetivamente contado na gaveta no fechamento. */
+    val contadoCentavos: Long? = null,
+    val status: String = StatusSessao.ABERTA,
+    val observacao: String? = null
+)
+
+@Entity(tableName = "movimentos_caixa", indices = [Index("sessaoId")])
+data class MovimentoCaixa(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sessaoId: Long,
+    val tipo: String,
+    val valorCentavos: Long,
+    val motivo: String,
+    val criadoPor: String,
+    val criadoEm: Long
+)
+
+/**
+ * Recebimento. Suporta pagamento parcial e varios pagamentos na mesma conta.
+ *
+ * `valorCentavos` e o quanto foi ABATIDO DA CONTA - e tambem o quanto entra
+ * na gaveta. O troco e so a mecanica fisica: cliente da 100 numa conta de 50
+ * -> valor=50, troco=50, e a gaveta cresce 50. Somar troco aqui inflaria o
+ * fechamento.
+ */
+@Entity(tableName = "pagamentos", indices = [Index("comandaId"), Index("sessaoId")])
+data class Pagamento(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val comandaId: Long,
+    val sessaoId: Long,
+    val metodo: String,
+    val valorCentavos: Long,
+    val trocoCentavos: Long = 0,
+    val recebidoPor: String,
+    val recebidoEm: Long,
+    // preenchidos pelo SDK da Cielo quando o pagamento no terminal existir
+    val cieloNsu: String? = null,
+    val cieloAutorizacao: String? = null,
+    val cieloTransacaoId: String? = null,
+    /** Reservado para o modulo fiscal, fora do escopo desta versao. */
+    val referenciaFiscal: String? = null
+)

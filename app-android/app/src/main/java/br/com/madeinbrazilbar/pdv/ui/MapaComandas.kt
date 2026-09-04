@@ -22,7 +22,8 @@ fun MapaComandas(
     vm: PdvViewModel,
     aoAbrirComanda: (Long) -> Unit,
     aoIrParaDiagnostico: () -> Unit,
-    aoIrParaFila: () -> Unit
+    aoIrParaFila: () -> Unit,
+    aoIrParaCaixa: () -> Unit
 ) {
     val comandas by vm.comandas.collectAsState()
     val operador by vm.operador.collectAsState()
@@ -69,6 +70,10 @@ fun MapaComandas(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val emAberto by vm.impressoesEmAberto.collectAsState()
+                    val sessao by vm.sessaoAberta.collectAsState()
+                    TextButton(onClick = aoIrParaCaixa) {
+                        Text("Caixa", color = if (sessao != null) VerdeOk else VermelhoAlerta)
+                    }
                     TextButton(onClick = aoIrParaFila) {
                         Text(if (emAberto > 0) "Fila ($emAberto)" else "Fila")
                     }

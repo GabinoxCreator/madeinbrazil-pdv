@@ -35,9 +35,15 @@ Tudo isto roda em **celular Android comum** — não precisa do terminal.
 - **Prévia do cupom na tela** — confere o papel sem gastar bobina.
 - **Cancelamento de item** com motivo, registrado.
 - **Diagnóstico de impressoras** — varre a rede e imprime cupom de teste.
+- **Caixa**: abertura com fundo de troco, sangria, suprimento, recebimento
+  (dinheiro com troco, Pix, crédito, débito, voucher), **pagamento parcial e
+  múltiplas formas na mesma conta**, e fechamento com apuração da diferença.
 
-Ainda não tem: pagamento (depende do SDK da Cielo), sincronização com servidor,
-transferência entre comandas, caixa.
+Ainda não tem: pagamento pelo terminal Cielo (depende do SDK), sincronização
+com servidor, transferência entre comandas.
+
+**Limitação atual:** o banco é local do aparelho. Dois celulares não veem as
+mesmas comandas — isso só se resolve com o servidor.
 
 ## Decisões que valem para sempre
 
@@ -56,6 +62,13 @@ transferência entre comandas, caixa.
   `Charset.forName("IBM860")` — nem todo Android traz esse charset e a falha
   seria silenciosa: acento torto no cupom no meio do almoço.
 - **A faixa de rede é descoberta em runtime**, não chumbada no código.
+- **Nenhum recebimento sem caixa aberto.** Dinheiro entrando fora de sessão é
+  divergência garantida no fechamento — está na tabela de riscos da spec.
+- **O troco não entra na conta da gaveta.** Cliente paga conta de 50 com nota de
+  100: o pagamento vale 50, o troco é 50, e a gaveta cresce 50. Somar o troco
+  criaria sobra falsa todo dia. Tem teste para isso.
+- **Comanda de controle não trava o fechamento do caixa.** Banda e equipe ficam
+  abertas de propósito; se bloqueassem, o caixa nunca fecharia.
 
 ## Restrições da Cielo (verificadas no APK gerado)
 
@@ -71,7 +84,7 @@ O `gradlew` ainda não está versionado; use o Gradle do Android Studio.
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 gradle -p app-android :app:assembleDebug        # compila
-gradle -p app-android :app:testDebugUnitTest    # 16 testes
+gradle -p app-android :app:testDebugUnitTest    # 43 testes
 ```
 
 APK: `app-android/app/build/outputs/apk/debug/app-debug.apk`
@@ -91,6 +104,21 @@ Precisa estar no Wi-Fi do bar.
 python3 ferramentas/impressoras.py procurar
 python3 ferramentas/impressoras.py testar todas
 ```
+
+## Testes
+
+43 testes, sem emulador:
+
+| Suíte | O que cobre |
+|---|---|
+| `ContaTest` | serviço, desconto, divisão por pessoa, centavos vs. ponto flutuante |
+| `ImpressaoTest` | bytes do PC860, alinhamento em 48 colunas, quebra de parágrafo |
+| `CaixaTest` | apuração da gaveta, troco fora da conta, diferença de fechamento |
+| `RegrasCaixaTest` | **as guardas, com banco Room de verdade em memória** (Robolectric) |
+
+`RegrasCaixaTest` roda o banco real na JVM, então as regras críticas —
+recebimento sem caixa aberto, sangria maior que a gaveta, pagamento parcial,
+comanda de controle no fechamento — são verificadas sem depender de emulador.
 
 ## Pendências
 

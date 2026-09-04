@@ -292,6 +292,7 @@ private fun AbaConta(vm: PdvViewModel, c: Comanda, conta: Conta, aberta: Boolean
     }
     var previa by remember { mutableStateOf<String?>(null) }
     var confirmarFechar by remember { mutableStateOf(false) }
+    var recebendo by remember { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -358,11 +359,23 @@ private fun AbaConta(vm: PdvViewModel, c: Comanda, conta: Conta, aberta: Boolean
                 onClick = { confirmarFechar = true },
                 modifier = Modifier.fillMaxWidth().height(50.dp)
             ) { Text("FECHAR CONTA") }
-        } else {
+        } else if (c.status == StatusComanda.FECHADA) {
+            Button(
+                onClick = { recebendo = true },
+                modifier = Modifier.fillMaxWidth().height(52.dp)
+            ) { Text("RECEBER") }
             OutlinedButton(
                 onClick = { vm.reabrirComanda(c.id) },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Reabrir comanda") }
+        } else {
+            Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+                Text(
+                    "Comanda recebida.",
+                    Modifier.fillMaxWidth().padding(12.dp),
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
 
         Spacer(Modifier.height(20.dp))
@@ -385,6 +398,10 @@ private fun AbaConta(vm: PdvViewModel, c: Comanda, conta: Conta, aberta: Boolean
             },
             confirmButton = { TextButton(onClick = { previa = null }) { Text("Fechar") } }
         )
+    }
+
+    if (recebendo) {
+        DialogoRecebimento(vm = vm, comanda = c, aoFechar = { recebendo = false })
     }
 
     if (confirmarFechar) {
