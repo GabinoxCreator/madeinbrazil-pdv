@@ -1,5 +1,5 @@
 {
- "_aviso": "MASSA DE TESTE. Copia do cardapio real do bar em 02/09/2026, para desenvolver sem depender do banco do bar. Nao e integracao. Substituir quando o banco do PDV existir. IPs das 4 termicas confirmados em campo em 03/09/2026.",
+ "_aviso": "MASSA DE TESTE. Copia do cardapio real do bar. Pontos de producao CONFIRMADOS com a operacao (Aurimar) em 03/09/2026. IPs das 4 termicas confirmados em campo em 03/09/2026. Nao e integracao - substituir quando o banco do PDV existir.",
  "pontosProducao": [
   {
    "id": "caixa",
@@ -1259,7 +1259,7 @@
    "nome": "Pespi Black",
    "preco": 8.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "215",
    "ordem": 0
   },
@@ -1269,7 +1269,7 @@
    "nome": "Sukita Laranja",
    "preco": 8.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "216",
    "ordem": 1
   },
@@ -1279,7 +1279,7 @@
    "nome": "Pepsi",
    "preco": 8.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "217",
    "ordem": 2
   },
@@ -1289,7 +1289,7 @@
    "nome": "Soda Limao",
    "preco": 8.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "218",
    "ordem": 3
   },
@@ -1299,7 +1299,7 @@
    "nome": "H2O Limoneto",
    "preco": 8.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "219",
    "ordem": 4
   },
@@ -1309,7 +1309,7 @@
    "nome": "H2O Limão",
    "preco": 8.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "220",
    "ordem": 5
   },
@@ -1319,7 +1319,7 @@
    "nome": "Coca-Cola lata",
    "preco": 8.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "221",
    "ordem": 6
   },
@@ -1329,7 +1329,7 @@
    "nome": "Coca-Cola Zero lata",
    "preco": 8.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "222",
    "ordem": 7
   },
@@ -1339,7 +1339,7 @@
    "nome": "Guaraná Antarctica lata",
    "preco": 8.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "223",
    "ordem": 8
   },
@@ -1349,7 +1349,7 @@
    "nome": "Guaraná Antarctica Zero lata",
    "preco": 8.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "224",
    "ordem": 9
   },
@@ -1358,8 +1358,8 @@
    "categoria": "energeticos",
    "nome": "Red Bull Energy Drink",
    "preco": 15.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "drink",
+   "pontoConfirmado": true,
    "codigo": "225",
    "ordem": 0
   },
@@ -1368,8 +1368,8 @@
    "categoria": "energeticos",
    "nome": "Red Bull Frutas Vermelhas",
    "preco": 15.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "drink",
+   "pontoConfirmado": true,
    "codigo": "226",
    "ordem": 1
   },
@@ -1378,8 +1378,8 @@
    "categoria": "energeticos",
    "nome": "Red Bull Sugarfree",
    "preco": 15.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "drink",
+   "pontoConfirmado": true,
    "codigo": "227",
    "ordem": 2
   },
@@ -1388,8 +1388,8 @@
    "categoria": "energeticos",
    "nome": "Red Bull Tropical",
    "preco": 15.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "drink",
+   "pontoConfirmado": true,
    "codigo": "228",
    "ordem": 3
   },
@@ -1398,8 +1398,8 @@
    "categoria": "energeticos",
    "nome": "Red Bull Melancia",
    "preco": 15.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "drink",
+   "pontoConfirmado": true,
    "codigo": "229",
    "ordem": 4
   },
@@ -1409,7 +1409,7 @@
    "nome": "Água sem gás",
    "preco": 4.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "230",
    "ordem": 0
   },
@@ -1419,7 +1419,7 @@
    "nome": "Água com gás",
    "preco": 5.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "231",
    "ordem": 1
   },
@@ -1429,7 +1429,7 @@
    "nome": "Água Tônica",
    "preco": 7.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "232",
    "ordem": 2
   },
@@ -1439,7 +1439,7 @@
    "nome": "Água de coco",
    "preco": 9.99,
    "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "233",
    "ordem": 3
   },
@@ -1449,7 +1449,7 @@
    "nome": "Suco de Limão Cremoso",
    "preco": 15.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "234",
    "ordem": 0
   },
@@ -1459,7 +1459,7 @@
    "nome": "Suco de Maracujá Cremoso",
    "preco": 15.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "235",
    "ordem": 1
   },
@@ -1469,7 +1469,7 @@
    "nome": "Suco Morango Cremoso",
    "preco": 15.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "236",
    "ordem": 2
   },
@@ -1479,7 +1479,7 @@
    "nome": "Suco Natural de Abacaxi",
    "preco": 9.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "237",
    "ordem": 3
   },
@@ -1489,7 +1489,7 @@
    "nome": "Suco Natural de Abacaxi com Hortelã",
    "preco": 11.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "238",
    "ordem": 4
   },
@@ -1499,7 +1499,7 @@
    "nome": "Suco Natural de Limão",
    "preco": 9.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "239",
    "ordem": 5
   },
@@ -1509,7 +1509,7 @@
    "nome": "Suco Natural de Maracuja",
    "preco": 11.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "240",
    "ordem": 6
   },
@@ -1518,8 +1518,8 @@
    "categoria": "sucos",
    "nome": "Suco Del Valle Pêssego lata",
    "preco": 8.99,
-   "ponto": "drink",
-   "pontoConfirmado": false,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
    "codigo": "241",
    "ordem": 7
   },
@@ -1528,8 +1528,8 @@
    "categoria": "sucos",
    "nome": "Suco Del Valle Uva lata",
    "preco": 8.99,
-   "ponto": "drink",
-   "pontoConfirmado": false,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
    "codigo": "242",
    "ordem": 8
   },
@@ -1538,8 +1538,8 @@
    "categoria": "sucos",
    "nome": "Suco Del Valle Maracujá lata",
    "preco": 8.99,
-   "ponto": "drink",
-   "pontoConfirmado": false,
+   "ponto": "cerveja",
+   "pontoConfirmado": true,
    "codigo": "243",
    "ordem": 9
   },
@@ -1549,7 +1549,7 @@
    "nome": "Suco de Laranja Natural",
    "preco": 9.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "244",
    "ordem": 10
   },
@@ -1559,7 +1559,7 @@
    "nome": "Campari",
    "preco": 149.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "245",
    "ordem": 0
   },
@@ -1569,7 +1569,7 @@
    "nome": "Gold Label + 5 Acompanhamentos",
    "preco": 629.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "246",
    "ordem": 1
   },
@@ -1579,7 +1579,7 @@
    "nome": "Gordon´s Gin + 5 Acompanhamentos",
    "preco": 269.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "247",
    "ordem": 2
   },
@@ -1589,7 +1589,7 @@
    "nome": "Tanquerat Royale",
    "preco": 349.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "248",
    "ordem": 3
   },
@@ -1599,7 +1599,7 @@
    "nome": "Tanqueray Sevilla",
    "preco": 349.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "249",
    "ordem": 4
   },
@@ -1609,7 +1609,7 @@
    "nome": "Smirnoff + 5 Acompanhamentos",
    "preco": 189.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "250",
    "ordem": 5
   },
@@ -1619,7 +1619,7 @@
    "nome": "Absolut + 5 Acomphamentos",
    "preco": 269.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "251",
    "ordem": 6
   },
@@ -1629,7 +1629,7 @@
    "nome": "Red Label + 5 Acompanhamentos",
    "preco": 284.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "252",
    "ordem": 7
   },
@@ -1639,7 +1639,7 @@
    "nome": "Ballantines + 5 Acompanhamentos",
    "preco": 279.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "253",
    "ordem": 8
   },
@@ -1649,7 +1649,7 @@
    "nome": "Chivas 12 anos + 5 Acompanhamentos",
    "preco": 379.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "254",
    "ordem": 9
   },
@@ -1659,7 +1659,7 @@
    "nome": "Ballena",
    "preco": 299.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "255",
    "ordem": 10
   },
@@ -1669,7 +1669,7 @@
    "nome": "Grand Old Parr + 5 Acompanhamentos",
    "preco": 399.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "256",
    "ordem": 11
   },
@@ -1679,7 +1679,7 @@
    "nome": "Black Label + 5 Acompanhamentos",
    "preco": 429.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "257",
    "ordem": 12
   },
@@ -1689,7 +1689,7 @@
    "nome": "Tanqueray + 5 Acompanhamentos",
    "preco": 329.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "258",
    "ordem": 13
   },
@@ -1699,7 +1699,7 @@
    "nome": "Licor Banana Gold",
    "preco": 139.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "259",
    "ordem": 14
   },
@@ -1709,7 +1709,7 @@
    "nome": "Licor 43",
    "preco": 299.99,
    "ponto": "drink",
-   "pontoConfirmado": false,
+   "pontoConfirmado": true,
    "codigo": "260",
    "ordem": 15
   },
@@ -1718,8 +1718,8 @@
    "categoria": "sorvetes",
    "nome": "Corneto Crocante",
    "preco": 10.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "261",
    "ordem": 0
   },
@@ -1728,8 +1728,8 @@
    "categoria": "sorvetes",
    "nome": "Eskibon Bombom",
    "preco": 9.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "262",
    "ordem": 1
   },
@@ -1738,8 +1738,8 @@
    "categoria": "sorvetes",
    "nome": "Eskibon mini bombom",
    "preco": 15.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "263",
    "ordem": 2
   },
@@ -1748,8 +1748,8 @@
    "categoria": "sorvetes",
    "nome": "Eskibon mini Chicabon",
    "preco": 15.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "264",
    "ordem": 3
   },
@@ -1758,8 +1758,8 @@
    "categoria": "sorvetes",
    "nome": "Frutily Morango",
    "preco": 5.49,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "265",
    "ordem": 4
   },
@@ -1768,8 +1768,8 @@
    "categoria": "sorvetes",
    "nome": "Fruttare Limão",
    "preco": 7.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "266",
    "ordem": 5
   },
@@ -1778,8 +1778,8 @@
    "categoria": "sorvetes",
    "nome": "Fruttare Uva",
    "preco": 7.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "267",
    "ordem": 6
   },
@@ -1788,8 +1788,8 @@
    "categoria": "sorvetes",
    "nome": "Kibon Chicabon",
    "preco": 9.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "268",
    "ordem": 7
   },
@@ -1798,8 +1798,8 @@
    "categoria": "sorvetes",
    "nome": "Kibon Tablito",
    "preco": 10.49,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "269",
    "ordem": 8
   },
@@ -1808,8 +1808,8 @@
    "categoria": "sorvetes",
    "nome": "Magnum Avelã",
    "preco": 19.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "270",
    "ordem": 9
   },
@@ -1818,8 +1818,8 @@
    "categoria": "sorvetes",
    "nome": "Magnum Branco",
    "preco": 18.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "271",
    "ordem": 10
   },
@@ -1828,8 +1828,8 @@
    "categoria": "sorvetes",
    "nome": "Magnum Clássico",
    "preco": 18.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "272",
    "ordem": 11
   },
@@ -1838,8 +1838,8 @@
    "categoria": "sorvetes",
    "nome": "Magnum Cookies & Cream Bombom",
    "preco": 20.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "273",
    "ordem": 12
   },
@@ -1848,8 +1848,8 @@
    "categoria": "sorvetes",
    "nome": "Magnum Cookies Cream",
    "preco": 19.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "274",
    "ordem": 13
   },
@@ -1858,8 +1858,8 @@
    "categoria": "sorvetes",
    "nome": "Magnum Pistache",
    "preco": 19.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "275",
    "ordem": 14
   },
@@ -1868,8 +1868,8 @@
    "categoria": "sorvetes",
    "nome": "Magnum Pistache Bombom",
    "preco": 20.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "276",
    "ordem": 15
   },
@@ -1878,8 +1878,8 @@
    "categoria": "sorvetes",
    "nome": "Palito Brigadeiro",
    "preco": 9.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "277",
    "ordem": 16
   },
@@ -1888,8 +1888,8 @@
    "categoria": "sorvetes",
    "nome": "Picole Guarana",
    "preco": 7.99,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "278",
    "ordem": 17
   },
@@ -1898,8 +1898,8 @@
    "categoria": "sorvetes",
    "nome": "Tablito 3 Chocolates",
    "preco": 10.49,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "279",
    "ordem": 18
   },
@@ -1908,8 +1908,8 @@
    "categoria": "sorvetes",
    "nome": "Tablito Maximo Avelã",
    "preco": 10.49,
-   "ponto": "cerveja",
-   "pontoConfirmado": false,
+   "ponto": "caixa",
+   "pontoConfirmado": true,
    "codigo": "280",
    "ordem": 19
   }

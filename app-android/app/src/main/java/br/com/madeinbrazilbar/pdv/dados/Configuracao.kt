@@ -7,16 +7,23 @@ package br.com.madeinbrazilbar.pdv.dados
  */
 object Configuracao {
 
-    /** Percentual de servico observado no cupom da operacao atual. */
+    /** Percentual de servico. Confirmado com a operacao (Aurimar, 03/09/2026). */
     const val TAXA_SERVICO_PCT: Double = 10.0
 
     /**
-     * Faixa aceita de numero de comanda. Larga de proposito: a operacao usa
-     * numeros de faixas diferentes ao mesmo tempo (70, 124, 1959, 2000, 2001).
-     * Apertar so depois de confirmar a faixa real com a operacao.
+     * Faixa aceita de numero de comanda.
+     *
+     * Valor informado pela operacao (Aurimar, 03/09/2026): de 0 a 100.
+     *
+     * ATENCAO - CONFLITO CONHECIDO: o levantamento de campo de 31/08/2026
+     * registrou comandas com numeros 124, 1959, 2000 e 2001 em uso no TOTVS.
+     * Com o teto em 100, essas comandas seriam RECUSADAS na abertura.
+     * Se aparecer recusa em servico, subir o teto aqui resolve na hora.
+     * [A CONFIRMAR] se aqueles numeros altos eram comanda mesmo ou outro
+     * identificador do sistema antigo.
      */
-    const val COMANDA_NUMERO_MIN: Int = 1
-    const val COMANDA_NUMERO_MAX: Int = 9999
+    const val COMANDA_NUMERO_MIN: Int = 0
+    const val COMANDA_NUMERO_MAX: Int = 100
 
     const val CABECALHO_CUPOM: String = "MADE IN BRAZIL BAR"
     const val RODAPE_CUPOM: String = "NÃO É DOCUMENTO FISCAL"

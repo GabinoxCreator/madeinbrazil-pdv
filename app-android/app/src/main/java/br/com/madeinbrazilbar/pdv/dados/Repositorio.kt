@@ -43,7 +43,9 @@ class Repositorio(
     ): ResultadoOperacao {
         if (numero < Configuracao.COMANDA_NUMERO_MIN || numero > Configuracao.COMANDA_NUMERO_MAX) {
             return ResultadoOperacao.Erro(
-                "Número fora da faixa (${Configuracao.COMANDA_NUMERO_MIN}–${Configuracao.COMANDA_NUMERO_MAX})"
+                "Comanda $numero está fora da faixa configurada " +
+                    "(${Configuracao.COMANDA_NUMERO_MIN} a ${Configuracao.COMANDA_NUMERO_MAX}). " +
+                    "Se esse número existe de verdade, avise — a faixa é configurável."
             )
         }
         dao.comandaVivaComNumero(numero)?.let {
