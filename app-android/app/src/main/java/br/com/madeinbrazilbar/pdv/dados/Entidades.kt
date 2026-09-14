@@ -1,5 +1,6 @@
 package br.com.madeinbrazilbar.pdv.dados
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -121,6 +122,8 @@ object TipoImpressao {
     const val MENSAGEM = "mensagem"
     const val REIMPRESSAO = "reimpressao"
     const val TESTE = "teste"
+    /** Cupom da fila do delivery no servidor. Sem pedidoId: não mexe no print_status do PDV. */
+    const val DELIVERY = "delivery"
 }
 
 /**
@@ -134,7 +137,7 @@ object TipoImpressao {
  *
  * Fica só no aparelho: não vai pro servidor. Quem imprime é o terminal.
  */
-@Entity(tableName = "impressoes", indices = [Index("status")])
+@Entity(tableName = "impressoes", indices = [Index("status"), Index("trabalhoDeliveryId")])
 data class TrabalhoImpressao(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val pontoId: String,
@@ -150,7 +153,12 @@ data class TrabalhoImpressao(
     val pedidoId: Long? = null,
     val descricao: String,
     val criadoEm: Long,
-    val impressoEm: Long? = null
+    val impressoEm: Long? = null,
+    /** Id do trabalho na fila do delivery do servidor. Null: cupom do próprio PDV. */
+    val trabalhoDeliveryId: String? = null,
+    /** O servidor já recebeu o resultado (dlv_concluir_impressao) deste cupom. */
+    @ColumnInfo(defaultValue = "0")
+    val concluidoNoServidor: Boolean = false
 ) {
     // ByteArray em data class precisa de equals/hashCode proprios
     override fun equals(other: Any?): Boolean {

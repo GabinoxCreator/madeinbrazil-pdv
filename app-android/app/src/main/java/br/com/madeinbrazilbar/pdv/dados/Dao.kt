@@ -234,6 +234,27 @@ interface PdvDao {
     @Query("SELECT status FROM impressoes WHERE pedidoId = :pedidoId")
     suspend fun statusDosCuponsDoPedido(pedidoId: Long): List<String>
 
+    @Query("SELECT * FROM impressoes WHERE id = :id")
+    suspend fun impressaoAgora(id: Long): TrabalhoImpressao?
+
+    // ---------------- estação do delivery ----------------
+
+    @Query("SELECT * FROM impressoes WHERE trabalhoDeliveryId = :trabalhoDeliveryId LIMIT 1")
+    suspend fun impressaoDoDelivery(trabalhoDeliveryId: String): TrabalhoImpressao?
+
+    /** Cupons do delivery que já têm resultado e o servidor ainda não soube. */
+    @Query("""SELECT * FROM impressoes WHERE trabalhoDeliveryId IS NOT NULL
+              AND concluidoNoServidor = 0 AND status IN ('enviado','falha') ORDER BY id""")
+    suspend fun impressoesDeliverySemConclusao(): List<TrabalhoImpressao>
+
+    @Query("UPDATE impressoes SET concluidoNoServidor = 1 WHERE id = :id")
+    suspend fun marcarConcluidoNoServidor(id: Long)
+
+    /** O servidor mandou de novo um cupom já concluído lá: volta pra fila do zero. */
+    @Query("""UPDATE impressoes SET status = 'pendente', tentativas = 0, ultimoErro = NULL,
+              impressoEm = NULL, concluidoNoServidor = 0 WHERE id = :id""")
+    suspend fun reenfileirarDelivery(id: Long)
+
     /**
      * Lanca o pedido inteiro numa transacao: ou o pedido e todos os itens
      * entram, ou nada entra. Meio pedido no banco e comanda errada na conta.
