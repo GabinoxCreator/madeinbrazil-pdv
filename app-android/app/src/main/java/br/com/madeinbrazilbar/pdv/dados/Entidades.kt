@@ -33,6 +33,22 @@ object StatusImpressao {
     const val PENDENTE = "pendente"
     const val ENVIADO = "enviado"
     const val FALHA = "falha"
+    /** Só vale pro pedido: um ponto de produção imprimiu e outro não. */
+    const val PARCIAL = "parcial"
+
+    /**
+     * Situação de impressão do PEDIDO a partir dos cupons dele (um por ponto
+     * de produção). Enquanto algum cupom ainda está na fila, devolve null:
+     * não dá pra dizer nada ainda, e avisar "falha" agora seria alarme falso
+     * de um cupom que pode sair na próxima tentativa.
+     */
+    fun doPedido(statusDosCupons: List<String>): String? = when {
+        statusDosCupons.isEmpty() -> null
+        statusDosCupons.any { it == PENDENTE } -> null
+        statusDosCupons.all { it == ENVIADO } -> ENVIADO
+        statusDosCupons.all { it == FALHA } -> FALHA
+        else -> PARCIAL
+    }
 }
 
 @Entity(

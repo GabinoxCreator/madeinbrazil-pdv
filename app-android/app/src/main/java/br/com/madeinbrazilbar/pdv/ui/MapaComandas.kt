@@ -23,7 +23,8 @@ fun MapaComandas(
     aoAbrirComanda: (Long) -> Unit,
     aoIrParaDiagnostico: () -> Unit,
     aoIrParaFila: () -> Unit,
-    aoIrParaCaixa: () -> Unit
+    aoIrParaCaixa: () -> Unit,
+    aoIrParaTerminal: () -> Unit
 ) {
     val comandas by vm.comandas.collectAsState()
     val operador by vm.operador.collectAsState()
@@ -85,7 +86,8 @@ fun MapaComandas(
 
             // situação da conversa com o servidor
             val (textoServidor, corServidor) = when {
-                !sincronia.habilitada -> "Servidor: desligado (app sem credenciais)" to VermelhoAlerta
+                !sincronia.habilitada -> "Servidor: desligado (app sem endereço do servidor)" to VermelhoAlerta
+                sincronia.semLogin -> "Servidor: terminal sem login — toque para configurar" to VermelhoAlerta
                 sincronia.ultimoErro != null && sincronia.pendentes > 0 ->
                     "Servidor: sem enviar · ${sincronia.pendentes} pendente(s)" to VermelhoAlerta
                 sincronia.ultimoErro != null -> "Servidor: com problema" to VermelhoAlerta
@@ -100,7 +102,7 @@ fun MapaComandas(
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 6.dp)
-                    .clickable { mostrarServidor = true }
+                    .clickable { if (sincronia.semLogin) aoIrParaTerminal() else mostrarServidor = true }
             )
 
             OutlinedTextField(
@@ -142,8 +144,11 @@ fun MapaComandas(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (!sincronia.habilitada) {
-                        Text("Este app foi instalado sem as credenciais do terminal. Ele funciona, mas só guarda no aparelho.")
+                        Text("Este app foi instalado sem o endereço do servidor. Ele funciona, mas só guarda no aparelho.")
                     } else {
+                        if (sincronia.semLogin) {
+                            Text("Terminal sem login: o que for feito fica guardado e sobe quando ele conectar.", color = VermelhoAlerta)
+                        }
                         Text("Aguardando envio: ${sincronia.pendentes}")
                         Text(
                             "Última sincronização: " +
@@ -161,7 +166,10 @@ fun MapaComandas(
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { mostrarServidor = false }) { Text("Fechar") } }
+            confirmButton = { TextButton(onClick = { mostrarServidor = false }) { Text("Fechar") } },
+            dismissButton = {
+                TextButton(onClick = { mostrarServidor = false; aoIrParaTerminal() }) { Text("Configurar terminal") }
+            }
         )
     }
 

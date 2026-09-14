@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun TelaDiagnostico(vm: PdvViewModel, aoVoltar: () -> Unit) {
     val escopo = rememberCoroutineScope()
-    var ip by remember { mutableStateOf(vm.cardapio.pontosProducao.first().ip) }
+    var ip by remember(vm.cardapio.pontosProducao) { mutableStateOf(vm.cardapio.pontosProducao.first().ip) }
     var ocupado by remember { mutableStateOf(false) }
     val registro = remember { mutableStateListOf<String>() }
     fun log(l: String) = registro.add(0, l)

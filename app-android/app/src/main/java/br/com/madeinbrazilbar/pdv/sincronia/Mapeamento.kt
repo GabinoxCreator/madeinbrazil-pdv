@@ -143,6 +143,15 @@ object Mapeamento {
         put("last_activity_at", iso(c.ultimaAtividadeEm))
     }
 
+    /** Só as colunas que o terminal pode alterar ao cancelar (mesmas da pdv_cancelar_comanda). */
+    fun cancelamentoDeComanda(c: Comanda, motivo: String): JsonObject = buildJsonObject {
+        put("status", c.status)
+        put("closed_at", iso(c.fechadaEm))
+        put("cancelled_reason", motivo)
+        put("last_activity_by_name", c.ultimaAtividadePor)
+        put("last_activity_at", iso(c.ultimaAtividadeEm))
+    }
+
     fun ajusteDeConta(c: Comanda): JsonObject = buildJsonObject {
         put("people_count", c.pessoas)
         put("service_fee_pct", c.taxaServicoPct)
@@ -156,6 +165,11 @@ object Mapeamento {
         put("table_number", p.mesa)
         put("print_status", p.statusImpressao)
         put("created_at", iso(p.criadoEm))
+    }
+
+    /** Só a situação de impressão: o resto do pedido não muda depois de lançado. */
+    fun impressaoDoPedido(p: Pedido): JsonObject = buildJsonObject {
+        put("print_status", p.statusImpressao)
     }
 
     fun item(i: ItemLancado, pedidoUuid: String, comandaUuid: String, lancadoEm: Long): JsonObject =

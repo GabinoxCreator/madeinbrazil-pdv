@@ -85,7 +85,10 @@ data class Cardapio(
             }
         }
 
-        /** Grava o cardápio do servidor. Vale a partir da próxima vez que o app abrir. */
+        /**
+         * Grava o cardápio do servidor, pra valer também quando o app abrir de
+         * novo sem rede. Quem baixou troca o cardápio em uso na mesma hora.
+         */
         fun salvar(context: Context, cardapio: Cardapio) {
             val temporario = File(context.filesDir, "$ARQUIVO_SERVIDOR.tmp")
             temporario.writeText(json.encodeToString(serializer(), cardapio))

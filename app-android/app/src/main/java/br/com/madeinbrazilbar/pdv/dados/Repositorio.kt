@@ -27,9 +27,16 @@ sealed class ResultadoOperacao {
  */
 class Repositorio(
     private val dao: PdvDao,
-    val cardapio: Cardapio,
+    /** Lê o cardápio ATUAL a cada uso: o do servidor troca com o app aberto. */
+    private val cardapioAtual: () -> Cardapio,
     private val sincronia: Sincronia? = null
 ) {
+
+    /** Cardápio fixo (testes e quem não precisa acompanhar o servidor). */
+    constructor(dao: PdvDao, cardapio: Cardapio, sincronia: Sincronia? = null) :
+        this(dao, { cardapio }, sincronia)
+
+    val cardapio: Cardapio get() = cardapioAtual()
 
     fun comandasVivas(): Flow<List<Comanda>> = dao.comandasVivas()
     fun comanda(id: Long): Flow<Comanda?> = dao.comanda(id)
@@ -260,6 +267,48 @@ class Repositorio(
             sincronia?.atualizar(Mapeamento.COMANDAS, reaberta.uuid, Mapeamento.situacao(reaberta))
         }
         return ResultadoOperacao.Ok("Comanda ${comanda.numero} reaberta")
+    }
+
+    /**
+     * Cancela comanda aberta por engano. Sem isto, comanda viva sem nada
+     * lançado nunca é recebida e trava o fechamento do caixa pra sempre.
+     *
+     * As regras repetem a função pdv_cancelar_comanda do servidor: só comanda
+     * viva, sem pagamento e sem item ativo (item se cancela antes, com motivo -
+     * assim nada consumido some da conta por esse caminho).
+     * O motivo não tem coluna no aparelho: vai só pro servidor.
+     */
+    suspend fun cancelarComanda(comandaId: Long, motivo: String, operador: String): ResultadoOperacao {
+        if (motivo.isBlank()) return ResultadoOperacao.Erro("Informe o motivo do cancelamento")
+        val comanda = dao.comandaAgora(comandaId)
+            ?: return ResultadoOperacao.Erro("Comanda não encontrada")
+        if (comanda.status !in StatusComanda.VIVOS) {
+            return ResultadoOperacao.Erro("Comanda ${comanda.numero} já está ${comanda.status}")
+        }
+        if (dao.pagamentosDaComandaAgora(comandaId).isNotEmpty()) {
+            return ResultadoOperacao.Erro(
+                "A comanda ${comanda.numero} já tem pagamento registrado e não pode ser cancelada"
+            )
+        }
+        if (dao.itensDaComandaAgora(comandaId).isNotEmpty()) {
+            return ResultadoOperacao.Erro(
+                "A comanda ${comanda.numero} tem itens lançados: cancele os itens (com motivo) antes de cancelar a comanda"
+            )
+        }
+        val agora = System.currentTimeMillis()
+        val cancelada = comanda.copy(
+            status = StatusComanda.CANCELADA,
+            fechadaEm = comanda.fechadaEm ?: agora,
+            ultimaAtividadePor = operador,
+            ultimaAtividadeEm = agora
+        )
+        transacao {
+            dao.atualizarComanda(cancelada)
+            sincronia?.atualizar(
+                Mapeamento.COMANDAS, cancelada.uuid, Mapeamento.cancelamentoDeComanda(cancelada, motivo.trim())
+            )
+        }
+        return ResultadoOperacao.Ok("Comanda ${comanda.numero} cancelada")
     }
 
     // ---------------------------------------------------------- conferencia

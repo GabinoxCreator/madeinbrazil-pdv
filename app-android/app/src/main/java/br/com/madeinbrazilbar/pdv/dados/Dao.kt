@@ -34,6 +34,27 @@ interface PdvDao {
     @Update
     suspend fun atualizarComanda(c: Comanda)
 
+    @Query("DELETE FROM comandas WHERE id = :id")
+    suspend fun apagarComanda(id: Long)
+
+    /*
+     * Usados pra juntar duas comandas que são a MESMA comanda física (mesmo
+     * número aberto em dois terminais sem rede): tudo que estava na cópia
+     * passa pra comanda que já existe no servidor.
+     */
+
+    @Query("UPDATE pedidos SET comandaId = :para WHERE comandaId = :de")
+    suspend fun moverPedidosDeComanda(de: Long, para: Long)
+
+    @Query("UPDATE itens SET comandaId = :para WHERE comandaId = :de")
+    suspend fun moverItensDeComanda(de: Long, para: Long)
+
+    @Query("UPDATE pagamentos SET comandaId = :para WHERE comandaId = :de")
+    suspend fun moverPagamentosDeComanda(de: Long, para: Long)
+
+    @Query("UPDATE impressoes SET comandaId = :para WHERE comandaId = :de")
+    suspend fun moverImpressoesDeComanda(de: Long, para: Long)
+
     // ---------------- pedidos e itens ----------------
 
     @Insert
@@ -164,6 +185,17 @@ interface PdvDao {
     @Query("SELECT COUNT(*) FROM sync_operacoes WHERE registroUuid = :uuid")
     suspend fun operacoesDoRegistro(uuid: String): Int
 
+    /**
+     * Troca um id do servidor por outro em toda a fila: no registro alvo e
+     * dentro do JSON (ex.: card_id do pedido). Trocar o texto é seguro porque
+     * o id é um uuid aleatório - não aparece por acaso em outro campo.
+     */
+    @Query("""UPDATE sync_operacoes
+              SET registroUuid = CASE WHEN registroUuid = :antigo THEN :novo ELSE registroUuid END,
+                  payload = REPLACE(payload, :antigo, :novo)
+              WHERE registroUuid = :antigo OR INSTR(payload, :antigo) > 0""")
+    suspend fun trocarUuidNasOperacoes(antigo: String, novo: String)
+
     @Query("SELECT valor FROM chave_valor WHERE chave = :chave")
     suspend fun lerValor(chave: String): String?
 
@@ -192,6 +224,9 @@ interface PdvDao {
 
     @Query("UPDATE impressoes SET status = 'pendente', ultimoErro = NULL WHERE id = :id")
     suspend fun reenfileirar(id: Long)
+
+    @Query("SELECT status FROM impressoes WHERE pedidoId = :pedidoId")
+    suspend fun statusDosCuponsDoPedido(pedidoId: Long): List<String>
 
     /**
      * Lanca o pedido inteiro numa transacao: ou o pedido e todos os itens

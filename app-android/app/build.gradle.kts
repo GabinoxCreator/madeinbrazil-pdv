@@ -8,8 +8,11 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-// Credenciais do terminal: arquivo FORA do git (app-android/credenciais.properties).
+// Endereço e chave pública do servidor: arquivo FORA do git (app-android/credenciais.properties).
 // Sem o arquivo o app compila e roda normalmente, só que sem falar com o servidor.
+// O e-mail e a senha do terminal NÃO entram mais no APK: qualquer um com o
+// arquivo instalado leria a senha. Agora são digitados no próprio aparelho
+// (tela "Terminal") e ficam guardados só nele.
 val credenciais = Properties().apply {
     val arquivo = rootProject.file("credenciais.properties")
     if (arquivo.exists()) arquivo.inputStream().use { load(it) }
@@ -29,8 +32,6 @@ android {
 
         buildConfigField("String", "SERVIDOR_URL", credencial("servidor.url"))
         buildConfigField("String", "SERVIDOR_CHAVE_PUBLICA", credencial("servidor.chave_publica"))
-        buildConfigField("String", "TERMINAL_EMAIL", credencial("terminal.email"))
-        buildConfigField("String", "TERMINAL_SENHA", credencial("terminal.senha"))
     }
 
     buildTypes {
@@ -52,6 +53,12 @@ android {
 
     // permite testar o Room de verdade (banco em memoria) na JVM, sem emulador
     testOptions { unitTests { isIncludeAndroidResources = true } }
+}
+
+// Guarda o esquema do banco local de cada versão (app/schemas): é a base pra
+// escrever as migrações à mão e conferir que nada some numa atualização.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {

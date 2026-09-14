@@ -1,5 +1,6 @@
 package br.com.madeinbrazilbar.pdv.sincronia
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -68,6 +69,25 @@ class ClienteSupabase(
         }
         return json.parseToJsonElement(texto).jsonObject.texto("access_token")
             ?: throw ErroServidor("O servidor não devolveu o token de acesso", codigo, true)
+    }
+
+    /**
+     * Entra de novo AGORA, ignorando o token guardado. Serve pra conferir
+     * e-mail e senha digitados na tela do terminal antes de gravá-los.
+     * Qualquer falha sai como ErroServidor, com a mensagem pra mostrar.
+     */
+    suspend fun renovarLogin() {
+        withContext(Dispatchers.IO) {
+            try {
+                obterToken(renovar = true)
+            } catch (e: ErroServidor) {
+                throw e
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw ErroServidor("Resposta inesperada do servidor no login: ${e.message}", 0, true)
+            }
+        }
     }
 
     // ---------------------------------------------------------- chamadas

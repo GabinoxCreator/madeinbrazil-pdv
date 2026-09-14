@@ -99,7 +99,7 @@ fun TelaComanda(vm: PdvViewModel, comandaId: Long, aoVoltar: () -> Unit) {
             when (aba) {
                 0 -> AbaConsumo(vm, itens, aberta)
                 1 -> AbaLancar(vm, comandaId) { aba = 0 }
-                else -> AbaConta(vm, c, conta, aberta)
+                else -> AbaConta(vm, c, conta, aberta, semItens = itens.isEmpty())
             }
         }
     }
@@ -175,11 +175,14 @@ private fun AbaConsumo(vm: PdvViewModel, itens: List<ItemLancado>, aberta: Boole
 @Composable
 private fun AbaLancar(vm: PdvViewModel, comandaId: Long, aoEnviar: () -> Unit) {
     val carrinho = remember { mutableStateListOf<ItemEscolhido>() }
-    var categoria by remember { mutableStateOf(vm.cardapio.categorias.first().slug) }
+    // o cardápio pode chegar novo do servidor com a tela aberta: entra como
+    // chave pra lista não ficar com item ou preço antigo
+    val cardapio = vm.cardapio
+    var categoria by remember(cardapio.categorias) { mutableStateOf(cardapio.categorias.first().slug) }
     var busca by remember { mutableStateOf("") }
 
-    val visiveis = remember(categoria, busca) {
-        if (busca.isBlank()) vm.cardapio.itensDe(categoria) else vm.cardapio.buscar(busca)
+    val visiveis = remember(cardapio, categoria, busca) {
+        if (busca.isBlank()) cardapio.itensDe(categoria) else cardapio.buscar(busca)
     }
     val totalCarrinho = carrinho.sumOf { it.item.precoCentavos * it.quantidade }
 
@@ -284,7 +287,7 @@ private fun AbaLancar(vm: PdvViewModel, comandaId: Long, aoEnviar: () -> Unit) {
 // -------------------------------------------------------------------- conta
 
 @Composable
-private fun AbaConta(vm: PdvViewModel, c: Comanda, conta: Conta, aberta: Boolean) {
+private fun AbaConta(vm: PdvViewModel, c: Comanda, conta: Conta, aberta: Boolean, semItens: Boolean) {
     var pessoas by remember(c.id, c.pessoas) { mutableStateOf(c.pessoas.toString()) }
     var servico by remember(c.id, c.taxaServicoPct) { mutableStateOf(c.taxaServicoPct > 0) }
     var desconto by remember(c.id, c.descontoCentavos) {
@@ -293,6 +296,7 @@ private fun AbaConta(vm: PdvViewModel, c: Comanda, conta: Conta, aberta: Boolean
     var previa by remember { mutableStateOf<String?>(null) }
     var confirmarFechar by remember { mutableStateOf(false) }
     var recebendo by remember { mutableStateOf(false) }
+    var cancelandoComanda by remember { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -371,11 +375,20 @@ private fun AbaConta(vm: PdvViewModel, c: Comanda, conta: Conta, aberta: Boolean
         } else {
             Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
                 Text(
-                    "Comanda recebida.",
+                    if (c.status == StatusComanda.CANCELADA) "Comanda cancelada." else "Comanda recebida.",
                     Modifier.fillMaxWidth().padding(12.dp),
                     fontWeight = FontWeight.Medium
                 )
             }
+        }
+
+        // comanda aberta por engano: sem nada lançado ela nunca seria recebida
+        // e travaria o fechamento do caixa
+        if (c.status in StatusComanda.VIVOS && semItens) {
+            OutlinedButton(
+                onClick = { cancelandoComanda = true },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Cancelar comanda", color = VermelhoAlerta) }
         }
 
         Spacer(Modifier.height(20.dp))
@@ -402,6 +415,32 @@ private fun AbaConta(vm: PdvViewModel, c: Comanda, conta: Conta, aberta: Boolean
 
     if (recebendo) {
         DialogoRecebimento(vm = vm, comanda = c, aoFechar = { recebendo = false })
+    }
+
+    if (cancelandoComanda) {
+        var motivo by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { cancelandoComanda = false },
+            title = { Text("Cancelar a comanda ${c.numero}?") },
+            text = {
+                Column {
+                    Text("Use só para comanda aberta por engano. O cancelamento fica registrado com o motivo.", fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = motivo, onValueChange = { motivo = it },
+                        label = { Text("Motivo") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { vm.cancelarComanda(c.id, motivo); cancelandoComanda = false },
+                    enabled = motivo.isNotBlank()
+                ) { Text("Cancelar comanda") }
+            },
+            dismissButton = { TextButton(onClick = { cancelandoComanda = false }) { Text("Voltar") } }
+        )
     }
 
     if (confirmarFechar) {

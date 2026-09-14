@@ -1,57 +1,141 @@
 package br.com.madeinbrazilbar.pdv.ui
 
 import android.app.Application
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.madeinbrazilbar.pdv.BuildConfig
 import br.com.madeinbrazilbar.pdv.dados.*
 import br.com.madeinbrazilbar.pdv.impressao.FilaImpressao
+import br.com.madeinbrazilbar.pdv.sincronia.ClienteServidor
 import br.com.madeinbrazilbar.pdv.sincronia.ClienteSupabase
 import br.com.madeinbrazilbar.pdv.sincronia.EstadoSincronia
 import br.com.madeinbrazilbar.pdv.sincronia.MotorSincronizacao
 import br.com.madeinbrazilbar.pdv.sincronia.Sincronia
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class PdvViewModel(app: Application) : AndroidViewModel(app) {
 
-    val cardapio: Cardapio = Cardapio.carregar(app)
+    /**
+     * Cardápio em uso. Fica em estado do Compose pra que as telas se
+     * redesenhem sozinhas quando o motor baixa um cardápio novo do servidor -
+     * sem precisar fechar e abrir o app.
+     */
+    var cardapio: Cardapio by mutableStateOf(Cardapio.carregar(app))
+        private set
     private val banco = BancoLocal.obter(app)
     private val dao = banco.dao()
 
-    /** Só liga a sincronização se o app foi compilado com as credenciais do terminal. */
+    /** Conta do terminal, digitada no aparelho (não vem mais dentro do APK). */
+    private val terminal = ConfiguracaoTerminal(app)
+
+    /**
+     * A fila de envio liga sempre que o app conhece o servidor, mesmo antes do
+     * terminal ter login: nada do que for feito antes de configurar se perde,
+     * sobe tudo quando o terminal conectar.
+     */
     private val sincronia: Sincronia? =
         if (BuildConfig.SERVIDOR_URL.isNotBlank()) Sincronia(banco) else null
 
-    private val repo = Repositorio(dao, cardapio, sincronia)
+    private val repo = Repositorio(dao, { cardapio }, sincronia)
 
     private val caixa = RepositorioCaixa(dao, sincronia)
 
-    /** Motor de sincronização: envia a fila e traz o que outros terminais fizeram. */
-    private val motor: MotorSincronizacao? = sincronia?.let {
-        MotorSincronizacao(
-            banco,
-            ClienteSupabase(
-                BuildConfig.SERVIDOR_URL,
-                BuildConfig.SERVIDOR_CHAVE_PUBLICA,
-                BuildConfig.TERMINAL_EMAIL,
-                BuildConfig.TERMINAL_SENHA
-            )
-        ).also { m ->
-            m.iniciar(viewModelScope, { cardapio }) { novo -> Cardapio.salvar(getApplication(), novo) }
+    /** Motor de sincronização: envia a fila e traz o que outros terminais fizeram. Só existe com login. */
+    private val motor = MutableStateFlow<MotorSincronizacao?>(null)
+
+    /** Liga o motor uma vez só: dois motores mandariam a mesma fila em dobro. */
+    private fun ligarMotor(cliente: ClienteServidor) {
+        if (motor.value != null || sincronia == null) return
+        motor.value = MotorSincronizacao(banco, cliente).also { m ->
+            m.iniciar(viewModelScope, { cardapio }) { novo ->
+                if (novo != cardapio) {
+                    Cardapio.salvar(getApplication(), novo)
+                    withContext(Dispatchers.Main) { cardapio = novo }
+                }
+            }
         }
     }
 
+    init {
+        if (sincronia != null && terminal.configurado) {
+            ligarMotor(
+                ClienteSupabase(
+                    BuildConfig.SERVIDOR_URL,
+                    BuildConfig.SERVIDOR_CHAVE_PUBLICA,
+                    terminal.email,
+                    terminal.senha
+                )
+            )
+        }
+    }
+
+    /** Sem motor: ou o app não conhece o servidor, ou o terminal ainda não tem login. */
+    private fun estadoSemMotor() = EstadoSincronia(habilitada = sincronia != null, semLogin = sincronia != null)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     val estadoSincronia: StateFlow<EstadoSincronia> =
-        combine(motor?.estado ?: flowOf(EstadoSincronia(habilitada = false)), dao.operacoesPendentes()) { e, n ->
+        combine(motor.flatMapLatest { m -> m?.estado ?: flowOf(estadoSemMotor()) }, dao.operacoesPendentes()) { e, n ->
             e.copy(pendentes = n)
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, EstadoSincronia(habilitada = motor != null))
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, motor.value?.estado?.value ?: estadoSemMotor())
+
+    private val _emailTerminal = MutableStateFlow(terminal.email)
+    /** E-mail da conta do terminal. A senha nunca sai daqui. */
+    val emailTerminal: StateFlow<String> = _emailTerminal.asStateFlow()
+
+    /**
+     * Conecta o terminal ao servidor. Testa o login ANTES de gravar: senha
+     * errada não fica guardada nem liga o motor com uma conta que não entra.
+     */
+    fun configurarTerminal(email: String, senha: String, aoConectar: () -> Unit = {}) {
+        if (sincronia == null) {
+            _aviso.value = "Este app foi instalado sem o endereço do servidor"
+            return
+        }
+        val emailLimpo = email.trim()
+        if (emailLimpo.isBlank() || senha.isBlank()) {
+            _aviso.value = "Informe o e-mail e a senha do terminal"
+            return
+        }
+        viewModelScope.launch {
+            _ocupado.value = true
+            try {
+                val cliente = ClienteSupabase(
+                    BuildConfig.SERVIDOR_URL, BuildConfig.SERVIDOR_CHAVE_PUBLICA, emailLimpo, senha
+                )
+                cliente.renovarLogin()
+                // o motor liga uma vez só; se já rodava com outra conta, segue com ela até reabrir o app
+                val contaTrocada = motor.value != null && (terminal.email != emailLimpo || terminal.senha != senha)
+                terminal.salvar(emailLimpo, senha)
+                _emailTerminal.value = emailLimpo
+                ligarMotor(cliente)   // o cliente acabou de entrar: começa com o token na mão
+                _aviso.value = if (contaTrocada)
+                    "Terminal conectado. A nova conta vale para o envio quando o app for reaberto."
+                else "Terminal conectado"
+                aoConectar()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _aviso.value = e.message ?: "Não foi possível conectar o terminal"
+            } finally {
+                _ocupado.value = false
+            }
+        }
+    }
 
     val sessaoAberta: StateFlow<SessaoCaixa?> = caixa.sessaoAberta()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -74,7 +158,7 @@ class PdvViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun saldoDe(comandaId: Long): SaldoComanda? = caixa.saldo(comandaId)
 
     /** Motor de impressao: roda em segundo plano, a tela nunca espera termica. */
-    private val fila = FilaImpressao(dao, cardapio, viewModelScope).also { it.iniciar() }
+    private val fila = FilaImpressao(dao, { cardapio }, viewModelScope, sincronia).also { it.iniciar() }
 
     val historicoImpressao: StateFlow<List<TrabalhoImpressao>> = repo.historicoImpressao()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -150,6 +234,8 @@ class PdvViewModel(app: Application) : AndroidViewModel(app) {
 
     fun fecharComanda(comandaId: Long) = rodar { repo.fecharComanda(comandaId, _operador.value) }
     fun reabrirComanda(comandaId: Long) = rodar { repo.reabrirComanda(comandaId, _operador.value) }
+    fun cancelarComanda(comandaId: Long, motivo: String) =
+        rodar { repo.cancelarComanda(comandaId, motivo, _operador.value) }
     fun imprimirConferencia(comandaId: Long) = rodar { repo.imprimirConferencia(comandaId) }
 
     suspend fun contaDe(comandaId: Long): Conta? = repo.conta(comandaId)

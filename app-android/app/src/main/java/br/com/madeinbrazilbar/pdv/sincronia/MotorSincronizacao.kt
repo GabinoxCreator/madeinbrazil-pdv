@@ -30,7 +30,9 @@ data class EstadoSincronia(
     val pendentes: Int = 0,
     val online: Boolean = false,
     val ultimoErro: String? = null,
-    val ultimaSincronizacaoEm: Long? = null
+    val ultimaSincronizacaoEm: Long? = null,
+    /** O app conhece o servidor, mas o terminal ainda não tem e-mail e senha. */
+    val semLogin: Boolean = false
 )
 
 /**
@@ -126,11 +128,66 @@ class MotorSincronizacao(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (ehNumeroDeComandaEmUso(op, e) && juntouComandaDuplicada(op)) continue
                 dao.registrarFalhaOperacao(op.id, e.message ?: e.javaClass.simpleName, relogio())
                 registrarErro(e)
                 return false
             }
         }
+    }
+
+    /** O servidor recusou abrir a comanda porque o número já está numa comanda viva. */
+    private fun ehNumeroDeComandaEmUso(op: OperacaoSync, e: Exception): Boolean =
+        op.tipo == TipoOperacao.INSERIR && op.tabela == Mapeamento.COMANDAS &&
+            e is ErroServidor && e.status == 409 &&
+            e.message?.contains("pdv_cards_numero_em_uso") == true
+
+    /**
+     * Mesmo número de comanda aberto em dois terminais sem rede. A comanda
+     * física (o cartão) é uma só, então os dois registros são a MESMA comanda.
+     * O servidor recusa o segundo e, sem isto, a fila deste terminal ficaria
+     * parada pra sempre nessa operação. Então junta: tudo que foi feito aqui
+     * passa pra comanda que já está no servidor, e o envio continua.
+     *
+     * Devolve false (e aí vale a regra normal: registra a falha e tenta depois)
+     * se não achar a comanda viva com esse número ou se a consulta falhar.
+     */
+    private suspend fun juntouComandaDuplicada(op: OperacaoSync): Boolean = try {
+        juntarComandaDuplicada(op)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        false
+    }
+
+    private suspend fun juntarComandaDuplicada(op: OperacaoSync): Boolean {
+        val numero = json.parseToJsonElement(op.payload).jsonObject.texto("card_number") ?: return false
+        val idLocal = op.registroUuid
+        val idServidor = cliente.buscar(
+            Mapeamento.COMANDAS,
+            listOf("select" to "id", "card_number" to "eq.$numero", "status" to "in.(aberta,fechada)")
+        ).map { it.textoObrigatorio("id") }.firstOrNull { it != idLocal } ?: return false
+
+        banco.withTransaction {
+            val copia = dao.comandaPorUuid(idLocal)
+            val doServidor = dao.comandaPorUuid(idServidor)
+            if (copia != null && doServidor != null) {
+                // a do servidor já tinha chegado aqui: muda tudo pra ela e apaga a cópia
+                dao.moverPedidosDeComanda(copia.id, doServidor.id)
+                dao.moverItensDeComanda(copia.id, doServidor.id)
+                dao.moverPagamentosDeComanda(copia.id, doServidor.id)
+                dao.moverImpressoesDeComanda(copia.id, doServidor.id)
+                dao.apagarComanda(copia.id)
+            } else if (copia != null) {
+                // ainda não chegou: a comanda daqui passa a ser a do servidor
+                dao.atualizarComanda(copia.copy(uuid = idServidor))
+            }
+            dao.removerOperacao(op.id)
+            // pedidos, itens, pagamentos e atualizações que ainda vão subir
+            // passam a apontar pra comanda do servidor
+            dao.trocarUuidNasOperacoes(idLocal, idServidor)
+        }
+        return true
     }
 
     private suspend fun enviar(op: OperacaoSync) {

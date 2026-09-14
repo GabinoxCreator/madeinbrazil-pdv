@@ -238,12 +238,107 @@ class SincronizacaoTest {
         val a = Terminal()
         assertNull(a.motor.baixarCardapio(a.cardapio))
     }
+
+    // ------------------------------------ mesmo número em dois terminais
+
+    @Test
+    fun `mesmo numero aberto em dois terminais sem rede vira uma comanda so`() = runBlocking {
+        val a = Terminal()
+        val b = Terminal()
+        // os dois abrem a 15 sem ter recebido nada um do outro
+        ok(a.repo.abrirComanda(15, "3", 2, null, false, "Beto"))
+        val idA = a.dao.comandasVivasAgora().single().id
+        ok(a.repo.lancarPedido(idA, listOf(ItemEscolhido(a.item(feijoada), 2)), "Beto"))
+        ok(b.repo.abrirComanda(15, "3", 2, null, false, "Ana"))
+        val idB = b.dao.comandasVivasAgora().single().id
+        val uuidB = b.dao.comandaAgora(idB)!!.uuid
+        ok(b.repo.lancarPedido(idB, listOf(ItemEscolhido(b.item(caipirinha), 1)), "Ana"))
+
+        assertTrue(a.motor.enviarPendentes())
+        assertTrue("a fila de B não pode travar na comanda repetida", b.motor.enviarPendentes())
+        assertEquals(0, b.dao.operacoesPendentesAgora())
+
+        val uuidServidor = servidor.linhas(Mapeamento.COMANDAS).single().textoObrigatorio("id")
+        assertEquals(a.dao.comandaAgora(idA)!!.uuid, uuidServidor)
+        val itens = servidor.linhas(Mapeamento.ITENS)
+        assertEquals(2, itens.size)
+        assertTrue(itens.all { it.texto("card_id") == uuidServidor })
+        assertTrue(servidor.linhas(Mapeamento.PEDIDOS).all { it.texto("card_id") == uuidServidor })
+        // em B a comanda passou a ser a do servidor
+        assertNull(b.dao.comandaPorUuid(uuidB))
+        assertEquals(uuidServidor, b.dao.comandasVivasAgora().single().uuid)
+
+        a.motor.receber()
+        assertEquals(setOf("cozinha", "drink"), a.dao.itensDaComandaAgora(idA).map { it.pontoId }.toSet())
+        b.motor.receber()
+        val naB = b.dao.comandasVivasAgora().single()
+        assertEquals(setOf("cozinha", "drink"), b.dao.itensDaComandaAgora(naB.id).map { it.pontoId }.toSet())
+    }
+
+    @Test
+    fun `mesmo numero em dois terminais quando B ja tinha recebido a comanda de A`() = runBlocking {
+        val a = Terminal()
+        val b = Terminal()
+        ok(a.repo.abrirComanda(15, "3", 2, null, false, "Beto"))
+        val idA = a.dao.comandasVivasAgora().single().id
+        ok(a.repo.lancarPedido(idA, listOf(ItemEscolhido(a.item(feijoada), 2)), "Beto"))
+        assertTrue(a.motor.enviarPendentes())
+
+        ok(b.repo.abrirComanda(15, "3", 2, null, false, "Ana"))
+        val idB = b.dao.comandasVivasAgora().single().id
+        ok(b.repo.lancarPedido(idB, listOf(ItemEscolhido(b.item(caipirinha), 1)), "Ana"))
+
+        // a recepção de B buscou no servidor antes de a 15 ser aberta aqui e
+        // gravou depois: B fica com as duas comandas 15 e a fila ainda cheia
+        val filaDeB = b.dao.todasOperacoes()
+        filaDeB.forEach { b.dao.removerOperacao(it.id) }
+        b.motor.receber()
+        filaDeB.forEach { b.dao.inserirOperacao(it) }
+        assertEquals(2, b.dao.comandasVivasAgora().size)
+
+        assertTrue(b.motor.enviarPendentes())
+        assertEquals(0, b.dao.operacoesPendentesAgora())
+
+        val uuidServidor = a.dao.comandaAgora(idA)!!.uuid
+        val naB = b.dao.comandasVivasAgora().single()
+        assertEquals(uuidServidor, naB.uuid)
+        assertNull("a cópia local some", b.dao.comandaAgora(idB))
+        assertEquals(setOf("cozinha", "drink"), b.dao.itensDaComandaAgora(naB.id).map { it.pontoId }.toSet())
+
+        assertEquals(1, servidor.linhas(Mapeamento.COMANDAS).size)
+        val itens = servidor.linhas(Mapeamento.ITENS)
+        assertEquals(2, itens.size)
+        assertTrue(itens.all { it.texto("card_id") == uuidServidor })
+
+        a.motor.receber()
+        assertEquals(setOf("cozinha", "drink"), a.dao.itensDaComandaAgora(idA).map { it.pontoId }.toSet())
+    }
+
+    @Test
+    fun `comanda cancelada em A sai da lista de B`() = runBlocking {
+        val a = Terminal()
+        val b = Terminal()
+        ok(a.repo.abrirComanda(15, "3", 2, null, false, "Beto"))
+        val idA = a.dao.comandasVivasAgora().single().id
+        assertTrue(a.motor.enviarPendentes())
+        b.motor.receber()
+        val idB = b.dao.comandasVivasAgora().single().id
+
+        ok(a.repo.cancelarComanda(idA, "aberta por engano", "Beto"))
+        assertTrue(a.motor.enviarPendentes())
+        assertEquals("aberta por engano", servidor.linhas(Mapeamento.COMANDAS).single().texto("cancelled_reason"))
+
+        b.motor.receber()
+        assertTrue(b.dao.comandasVivasAgora().isEmpty())
+        assertEquals(StatusComanda.CANCELADA, b.dao.comandaAgora(idB)!!.status)
+    }
 }
 
 /**
  * Servidor de mentira, em memória. Entende só os filtros que o motor usa
- * (eq, in, gte e "or"), dá carimbo de updated_at a cada gravação e repete a
- * trava de "dinheiro só com caixa aberto" do banco de verdade.
+ * (eq, in, gte e "or"), dá carimbo de updated_at a cada gravação e repete as
+ * travas do banco de verdade: "dinheiro só com caixa aberto" e "um número de
+ * comanda só numa comanda viva por vez" (índice pdv_cards_numero_em_uso).
  */
 class ServidorFalso : ClienteServidor {
 
@@ -282,14 +377,34 @@ class ServidorFalso : ClienteServidor {
         }
         val id = registro.textoObrigatorio("id")
         val t = tabela(tabela)
-        if (!t.containsKey(id)) t[id] = JsonObject(registro + ("updated_at" to carimbo()))
+        if (t.containsKey(id)) return
+        if (tabela == Mapeamento.COMANDAS) conferirNumeroEmUso(id, registro)
+        t[id] = JsonObject(registro + ("updated_at" to carimbo()))
     }
 
     override suspend fun atualizar(tabela: String, id: String, campos: JsonObject) {
         contar()
         val t = tabela(tabela)
         val atual = t[id] ?: throw ErroServidor("registro $id não existe", 404, true)
-        t[id] = JsonObject(atual + campos + ("updated_at" to carimbo()))
+        val novo = JsonObject(atual + campos + ("updated_at" to carimbo()))
+        if (tabela == Mapeamento.COMANDAS) conferirNumeroEmUso(id, novo)
+        t[id] = novo
+    }
+
+    /** Mesma recusa do banco de verdade, com o nome do índice na mensagem. */
+    private fun conferirNumeroEmUso(id: String, comanda: JsonObject) {
+        val vivos = listOf("aberta", "fechada")
+        if (comanda.texto("status") !in vivos) return
+        val numero = comanda.texto("card_number")
+        val emUso = tabela(Mapeamento.COMANDAS).values.any {
+            it.texto("id") != id && it.texto("card_number") == numero && it.texto("status") in vivos
+        }
+        if (emUso) {
+            throw ErroServidor(
+                "HTTP 409 · 23505 · duplicate key value violates unique constraint \"pdv_cards_numero_em_uso\"",
+                409, temporario = false
+            )
+        }
     }
 
     override suspend fun buscar(tabela: String, filtros: List<Pair<String, String>>): List<JsonObject> {

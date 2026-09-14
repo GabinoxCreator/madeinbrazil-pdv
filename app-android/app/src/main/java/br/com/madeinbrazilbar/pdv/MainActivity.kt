@@ -53,7 +53,8 @@ private fun AppPdv() {
                     aoAbrirComanda = { id -> nav.navigate("comanda/$id") },
                     aoIrParaDiagnostico = { nav.navigate("diagnostico") },
                     aoIrParaFila = { nav.navigate("fila") },
-                    aoIrParaCaixa = { nav.navigate("caixa") }
+                    aoIrParaCaixa = { nav.navigate("caixa") },
+                    aoIrParaTerminal = { nav.navigate("terminal") }
                 )
             }
             composable(
@@ -74,6 +75,9 @@ private fun AppPdv() {
             }
             composable("caixa") {
                 TelaCaixa(vm = vm, aoVoltar = { nav.popBackStack() })
+            }
+            composable("terminal") {
+                TelaTerminal(vm = vm, aoVoltar = { nav.popBackStack() })
             }
         }
     }
