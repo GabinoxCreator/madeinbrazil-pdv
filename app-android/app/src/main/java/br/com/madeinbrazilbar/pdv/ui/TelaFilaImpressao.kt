@@ -117,7 +117,8 @@ private fun CartaoImpressao(
             }
             Row {
                 TextButton(onClick = aoVerPrevia) { Text("Ver cupom") }
-                if (t.status == StatusImpressao.FALHA) {
+                // cupom do delivery: a reimpressão vem do servidor, não daqui
+                if (t.status == StatusImpressao.FALHA && t.trabalhoDeliveryId == null) {
                     TextButton(onClick = aoReimprimir) { Text("Reimprimir") }
                 }
             }

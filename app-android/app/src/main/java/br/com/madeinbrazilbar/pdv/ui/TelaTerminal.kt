@@ -6,6 +6,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -23,6 +24,8 @@ fun TelaTerminal(vm: PdvViewModel, aoVoltar: () -> Unit) {
     val sincronia by vm.estadoSincronia.collectAsState()
     val emailSalvo by vm.emailTerminal.collectAsState()
     val ocupado by vm.ocupado.collectAsState()
+    val estacaoLigada by vm.estacaoDelivery.collectAsState()
+    val estadoEstacao by vm.estadoEstacao.collectAsState()
     var email by remember(emailSalvo) { mutableStateOf(emailSalvo) }
     var senha by remember { mutableStateOf("") }
 
@@ -88,6 +91,38 @@ fun TelaTerminal(vm: PdvViewModel, aoVoltar: () -> Unit) {
             ) { Text("Conectar") }
 
             if (ocupado) LinearProgressIndicator(Modifier.fillMaxWidth())
+
+            HorizontalDivider()
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Este aparelho é a estação de impressão do delivery",
+                    fontSize = 15.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = estacaoLigada,
+                    onCheckedChange = { vm.definirEstacaoDelivery(it) },
+                    enabled = sincronia.habilitada
+                )
+            }
+            Text(
+                "Ligue em UM aparelho só, que fique com o app aberto na rede do bar. " +
+                    "Se o app for fechado, a estação para e o painel do delivery acusa.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (estacaoLigada) {
+                val e = estadoEstacao
+                val (textoEstacao, corEstacao) = when {
+                    e == null -> "Parada: o terminal precisa estar conectado." to VermelhoAlerta
+                    e.ultimoErro != null -> "Sem falar com o servidor: ${e.ultimoErro}" to VermelhoAlerta
+                    e.ultimaReservaEm == null -> "Ligando…" to AzulMarca
+                    else -> "No ar · última consulta ${tempoDesde(e.ultimaReservaEm)} · " +
+                        "${e.cuponsRecebidos} cupom(ns) recebido(s)" to VerdeOk
+                }
+                Text(textoEstacao, color = corEstacao, fontSize = 14.sp)
+            }
         }
     }
 }

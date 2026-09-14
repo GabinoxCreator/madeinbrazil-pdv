@@ -8,6 +8,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.madeinbrazilbar.pdv.BuildConfig
 import br.com.madeinbrazilbar.pdv.dados.*
+import br.com.madeinbrazilbar.pdv.impressao.ConclusaoDelivery
+import br.com.madeinbrazilbar.pdv.impressao.EstacaoDelivery
+import br.com.madeinbrazilbar.pdv.impressao.EstadoEstacao
 import br.com.madeinbrazilbar.pdv.impressao.FilaImpressao
 import br.com.madeinbrazilbar.pdv.pagamento.CieloSmart
 import br.com.madeinbrazilbar.pdv.pagamento.CredenciaisCielo
@@ -62,9 +65,22 @@ class PdvViewModel(app: Application) : AndroidViewModel(app) {
     /** Motor de sincronização: envia a fila e traz o que outros terminais fizeram. Só existe com login. */
     private val motor = MutableStateFlow<MotorSincronizacao?>(null)
 
+    /** Cliente já logado do motor. A estação do delivery usa o mesmo. */
+    @Volatile private var clienteDoMotor: ClienteServidor? = null
+
+    private val conclusaoDelivery = ConclusaoDelivery(dao) { clienteDoMotor }
+
+    private val _estacaoDelivery = MutableStateFlow(terminal.estacaoDelivery)
+    /** Chave "este aparelho é a estação de impressão do delivery". */
+    val estacaoDelivery: StateFlow<Boolean> = _estacaoDelivery.asStateFlow()
+
+    /** Estação do delivery: só existe com o motor ligado. */
+    private val estacao = MutableStateFlow<EstacaoDelivery?>(null)
+
     /** Liga o motor uma vez só: dois motores mandariam a mesma fila em dobro. */
     private fun ligarMotor(cliente: ClienteServidor) {
         if (motor.value != null || sincronia == null) return
+        clienteDoMotor = cliente
         motor.value = MotorSincronizacao(banco, cliente).also { m ->
             m.iniciar(viewModelScope, { cardapio }) { novo ->
                 if (novo != cardapio) {
@@ -73,6 +89,15 @@ class PdvViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+        // o laço roda sempre com o motor; só conversa com o servidor com a chave ligada
+        estacao.value = EstacaoDelivery(dao, cliente, conclusaoDelivery, { cardapio }).also { e ->
+            e.iniciar(viewModelScope) { _estacaoDelivery.value }
+        }
+    }
+
+    fun definirEstacaoDelivery(ligada: Boolean) {
+        terminal.salvarEstacaoDelivery(ligada)
+        _estacaoDelivery.value = ligada
     }
 
     init {
@@ -96,6 +121,11 @@ class PdvViewModel(app: Application) : AndroidViewModel(app) {
         combine(motor.flatMapLatest { m -> m?.estado ?: flowOf(estadoSemMotor()) }, dao.operacoesPendentes()) { e, n ->
             e.copy(pendentes = n)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, motor.value?.estado?.value ?: estadoSemMotor())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val estadoEstacao: StateFlow<EstadoEstacao?> =
+        estacao.flatMapLatest { e -> e?.estado ?: flowOf(null) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _emailTerminal = MutableStateFlow(terminal.email)
     /** E-mail da conta do terminal. A senha nunca sai daqui. */
@@ -238,7 +268,9 @@ class PdvViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun saldoDe(comandaId: Long): SaldoComanda? = caixa.saldo(comandaId)
 
     /** Motor de impressao: roda em segundo plano, a tela nunca espera termica. */
-    private val fila = FilaImpressao(dao, { cardapio }, viewModelScope, sincronia).also { it.iniciar() }
+    private val fila = FilaImpressao(
+        dao, { cardapio }, viewModelScope, sincronia, conclusaoDelivery = conclusaoDelivery
+    ).also { it.iniciar() }
 
     val historicoImpressao: StateFlow<List<TrabalhoImpressao>> = repo.historicoImpressao()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

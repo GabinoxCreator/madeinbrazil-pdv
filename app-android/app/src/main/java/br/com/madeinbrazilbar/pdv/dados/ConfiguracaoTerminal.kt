@@ -27,9 +27,20 @@ class ConfiguracaoTerminal(context: Context) {
             .apply()
     }
 
+    /**
+     * Este aparelho puxa e imprime a fila do delivery. Desligado por padrão:
+     * só um aparelho do bar precisa ser a estação.
+     */
+    val estacaoDelivery: Boolean get() = preferencias.getBoolean(CHAVE_ESTACAO_DELIVERY, false)
+
+    fun salvarEstacaoDelivery(ligada: Boolean) {
+        preferencias.edit().putBoolean(CHAVE_ESTACAO_DELIVERY, ligada).apply()
+    }
+
     private companion object {
         const val ARQUIVO = "terminal"
         const val CHAVE_EMAIL = "email"
         const val CHAVE_SENHA = "senha"
+        const val CHAVE_ESTACAO_DELIVERY = "estacao_delivery"
     }
 }

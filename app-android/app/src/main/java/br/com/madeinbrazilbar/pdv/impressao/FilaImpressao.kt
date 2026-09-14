@@ -31,7 +31,9 @@ class FilaImpressao(
      * impressora de verdade na rede.
      */
     private val imprimir: suspend (PontoProducao, ByteArray) -> Impressora.Resultado =
-        { ponto, bytes -> Impressora.imprimir(ponto.ip, bytes, ponto.porta) }
+        { ponto, bytes -> Impressora.imprimir(ponto.ip, bytes, ponto.porta) },
+    /** Avisa o servidor do resultado dos cupons do delivery. */
+    private val conclusaoDelivery: ConclusaoDelivery? = null
 ) {
 
     /** Cardápio fixo (quem não precisa acompanhar o servidor). */
@@ -100,21 +102,36 @@ class FilaImpressao(
                 t.id, StatusImpressao.FALHA, tentativas,
                 "Ponto de produção desconhecido: ${t.pontoId}", null
             )
+            avisarDelivery(t)
             return
         }
 
         when (val r = imprimir(ponto, t.conteudo)) {
-            is Impressora.Resultado.Ok ->
+            is Impressora.Resultado.Ok -> {
                 dao.atualizarImpressao(
                     t.id, StatusImpressao.ENVIADO, tentativas, null, System.currentTimeMillis()
                 )
+                avisarDelivery(t)
+            }
 
             is Impressora.Resultado.Falha -> {
                 // esgotou as tentativas: para de tentar e fica visivel para reimpressao manual
                 val status = if (tentativas >= Configuracao.IMPRESSAO_TENTATIVAS)
                     StatusImpressao.FALHA else StatusImpressao.PENDENTE
                 dao.atualizarImpressao(t.id, status, tentativas, r.motivo, null)
+                if (status == StatusImpressao.FALHA) avisarDelivery(t)
             }
         }
+    }
+
+    /**
+     * Cupom do delivery com resultado final: avisa o servidor em outra
+     * corrotina. Rede lenta ou fora não segura a impressão dos próximos
+     * cupons; o que não chegar a estação reenvia.
+     */
+    private fun avisarDelivery(t: br.com.madeinbrazilbar.pdv.dados.TrabalhoImpressao) {
+        val conclusao = conclusaoDelivery ?: return
+        if (t.trabalhoDeliveryId == null) return
+        escopo.launch { conclusao.concluirSeFaltar(t.id) }
     }
 }

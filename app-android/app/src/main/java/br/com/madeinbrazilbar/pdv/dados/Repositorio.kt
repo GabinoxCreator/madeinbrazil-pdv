@@ -176,6 +176,10 @@ class Repositorio(
     fun historicoImpressao(): Flow<List<TrabalhoImpressao>> = dao.historicoImpressao()
     fun impressoesEmAberto(): Flow<Int> = dao.impressoesEmAberto()
     suspend fun reimprimir(id: Long): ResultadoOperacao {
+        // reimprimir aqui imprimiria de novo sem o servidor saber: quem pede é o painel do delivery
+        if (dao.impressaoAgora(id)?.trabalhoDeliveryId != null) {
+            return ResultadoOperacao.Erro("Cupom do delivery: a reimpressão é pedida pelo painel do delivery")
+        }
         dao.reenfileirar(id)
         return ResultadoOperacao.Ok("Reenviado para a fila")
     }
