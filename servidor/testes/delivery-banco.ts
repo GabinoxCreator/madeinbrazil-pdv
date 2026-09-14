@@ -244,5 +244,37 @@ await ok("recusar em análise conta como 'recusado'", async () => {
   return como("authenticated", PAINEL, () => um("select dlv_cancelar_pedido($1, 'fora do cardápio hoje', 'Caixa')", [p6.pedido_id]));
 }, (r: any) => r.tipo === "recusado" || JSON.stringify(r));
 
+// ---------------------------------------------------------------- 11. gestão da loja e do cardápio (migration dlv_gestao)
+console.log("\n— Gestão pelo painel");
+await recusa("painel não escreve mais direto no cardápio", () => como("authenticated", PAINEL, () => sql("update dlv_items set price_cents = 1 where id = $1", [agua.id])), "permission denied");
+await recusa("anônimo não configura a loja", () => como("anon", null, () => sql("select dlv_configurar_loja('fechada', null, 'x')")), "permission denied");
+await recusa("logado sem painel não configura a loja", () => como("authenticated", ESTRANHO, () => sql("select dlv_configurar_loja('fechada', null, 'x')")), "Sem permissão");
+await recusa("situação da loja inválida", () => como("authenticated", PAINEL, () => sql("select dlv_configurar_loja('meio', null, 'Caixa')")), "inválida");
+await ok("painel fecha a loja e o cardápio mostra fechado", async () => {
+  const r = await como("authenticated", PAINEL, () => um("select dlv_configurar_loja('fechada', true, 'Caixa')"));
+  const m = await como("anon", null, () => um("select dlv_cardapio_publico()"));
+  return { r, aberta: m.loja.aberta };
+}, (x: any) => x.r.modo === "fechada" && x.r.aceite_automatico === true && x.aberta === false || JSON.stringify(x));
+await ok("painel reabre a loja", () => como("authenticated", PAINEL, () => um("select dlv_configurar_loja('aberta', null, 'Caixa')")), (r: any) => r.aberta === true || JSON.stringify(r));
+await ok("esgota a água e muda o preço; cardápio mostra esgotado", async () => {
+  await como("authenticated", PAINEL, () => sql("select dlv_ajustar_item($1, null, true, 350, 'Caixa')", [agua.id]));
+  const m = await como("anon", null, () => um("select dlv_cardapio_publico()"));
+  return m.categorias.find((c: any) => c.nome === "Bebidas").itens.find((i: any) => i.id === agua.id);
+}, (i: any) => i.esgotado === true && i.preco_cents === 350 || JSON.stringify(i));
+await recusa("pedido com item esgotado é recusado", () => criar(pedido({ cliente: { nome: "Sede", telefone: "17944440000" }, itens: [linhaFrango(), { item_id: agua.id, quantidade: 1 }] })), "esgotado");
+await ok("mudanças ficam registradas com o valor antigo e o novo", () => sql("select field, old_value, new_value, by_name from dlv_menu_changes where target_id = $1 order by field", [agua.id]),
+  (r: any[]) => r.length === 2 && r.some((x) => x.field === "preço" && x.old_value === "R$ 2,99" && x.new_value === "R$ 3,50") || JSON.stringify(r));
+await ok("pausar complemento tira ele do cardápio", async () => {
+  await como("authenticated", PAINEL, () => sql("select dlv_ajustar_opcao($1, true, null, null, 'Caixa')", [opcao(frango, "Escolhe seu Filé de Frango", "Empanado").id]));
+  const m = await como("anon", null, () => um("select dlv_cardapio_publico()"));
+  const f = m.categorias.find((c: any) => c.nome === "Especiais de Frango").itens.find((i: any) => i.id === frango.id);
+  return f.grupos.find((g: any) => g.nome === "Escolhe seu Filé de Frango").opcoes.map((o: any) => o.nome);
+}, (n: string[]) => !n.includes("Empanado") || n.join(","));
+await recusa("pedido com complemento pausado é recusado", () => criar(pedido({ cliente: { nome: "Empanado", telefone: "17933330000" } })), "indisponível");
+await ok("mudança sem diferença não gera registro", async () => {
+  await como("authenticated", PAINEL, () => sql("select dlv_ajustar_item($1, null, true, 350, 'Caixa')", [agua.id]));
+  return sql("select count(*)::int n from dlv_menu_changes where target_id = $1", [agua.id]);
+}, (r: any[]) => r[0].n === 2 || JSON.stringify(r));
+
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
