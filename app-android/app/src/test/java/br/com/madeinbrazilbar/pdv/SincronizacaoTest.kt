@@ -239,6 +239,96 @@ class SincronizacaoTest {
         assertNull(a.motor.baixarCardapio(a.cardapio))
     }
 
+    // ------------------------------------------------ equipe do servidor
+
+    /** Um ponto, uma categoria e um item ativos: o mínimo pra o cardápio ser baixado. */
+    private suspend fun cardapioMinimoNoServidor() {
+        servidor.inserir(Mapeamento.PONTOS, buildJsonObject {
+            put("id", "p-bar"); put("code", "bar"); put("name", "Bar")
+            put("printer_ip", "192.168.0.50"); put("printer_port", 9100); put("is_active", true)
+        })
+        servidor.inserir(Mapeamento.CATEGORIAS, buildJsonObject {
+            put("id", "c-drinks"); put("slug", "drinks"); put("name", "Drinks")
+            put("sort_order", 1); put("is_active", true)
+        })
+        servidor.inserir(Mapeamento.CARDAPIO, buildJsonObject {
+            put("id", "i-caipirinha"); put("category_id", "c-drinks"); put("name", "Caipirinha")
+            put("short_code", "188"); put("price_cents", 2500); put("production_point_id", "p-bar")
+            put("sort_order", 1); put("is_active", true)
+        })
+    }
+
+    private suspend fun pessoaNoServidor(id: String, nome: String, funcao: String, ativa: Boolean = true) =
+        servidor.inserir(Mapeamento.EQUIPE, buildJsonObject {
+            put("id", id); put("name", nome); put("role", funcao); put("is_active", ativa)
+        })
+
+    @Test
+    fun `equipe do servidor substitui a do app`() = runBlocking {
+        val a = Terminal()
+        assertTrue(a.cardapio.colaboradores.isNotEmpty())
+        cardapioMinimoNoServidor()
+        pessoaNoServidor("11111111-1111-1111-1111-111111111111", "Joana", "garcom")
+        pessoaNoServidor("22222222-2222-2222-2222-222222222222", "Pedro", "caixa")
+
+        val novo = a.motor.baixarCardapio(a.cardapio)!!
+
+        assertEquals(
+            listOf(
+                Colaborador("11111111-1111-1111-1111-111111111111", "Joana", "garcom"),
+                Colaborador("22222222-2222-2222-2222-222222222222", "Pedro", "caixa")
+            ),
+            novo.colaboradores
+        )
+        // só a equipe mudou e já conta como cardápio diferente: a tela atualiza
+        assertTrue(novo != novo.copy(colaboradores = a.cardapio.colaboradores))
+    }
+
+    @Test
+    fun `equipe vazia no servidor mantem a do app e o cardapio continua sendo baixado`() = runBlocking {
+        val a = Terminal()
+        cardapioMinimoNoServidor()
+
+        val novo = a.motor.baixarCardapio(a.cardapio)
+
+        assertNotNull("equipe vazia não pode impedir o cardápio", novo)
+        assertEquals(listOf("i-caipirinha"), novo!!.itens.map { it.id })
+        assertEquals(a.cardapio.colaboradores, novo.colaboradores)
+    }
+
+    @Test
+    fun `colaborador inativo nao aparece`() = runBlocking {
+        val a = Terminal()
+        cardapioMinimoNoServidor()
+        pessoaNoServidor("11111111-1111-1111-1111-111111111111", "Joana", "garcom")
+        pessoaNoServidor("33333333-3333-3333-3333-333333333333", "Saiu", "garcom", ativa = false)
+
+        val novo = a.motor.baixarCardapio(a.cardapio)!!
+
+        assertEquals(listOf("Joana"), novo.colaboradores.map { it.nome })
+        val consulta = servidor.consultas.single { it.first == Mapeamento.EQUIPE }.second
+        assertTrue(consulta.contains("is_active" to "eq.true"))
+        assertTrue(consulta.contains("select" to "id,name,role"))
+        assertTrue(consulta.contains("order" to "name"))
+    }
+
+    @Test
+    fun `Cardapio carregar mantem a equipe baixada`() {
+        val doApp = Cardapio.carregar(contexto)
+        val arquivo = java.io.File(contexto.filesDir, Cardapio.ARQUIVO_SERVIDOR)
+        try {
+            val equipe = listOf(Colaborador("11111111-1111-1111-1111-111111111111", "Joana", "garcom"))
+            Cardapio.salvar(contexto, doApp.copy(colaboradores = equipe))
+            assertEquals(equipe, Cardapio.carregar(contexto).colaboradores)
+
+            // arquivo baixado sem ninguém: vale a equipe do app
+            Cardapio.salvar(contexto, doApp.copy(colaboradores = emptyList()))
+            assertEquals(doApp.colaboradores, Cardapio.carregar(contexto).colaboradores)
+        } finally {
+            arquivo.delete()
+        }
+    }
+
     // ------------------------------------ mesmo número em dois terminais
 
     @Test
@@ -407,7 +497,11 @@ class ServidorFalso : ClienteServidor {
         }
     }
 
+    /** Toda consulta recebida (tabela e filtros), pra conferir o que o motor pediu. */
+    val consultas = mutableListOf<Pair<String, List<Pair<String, String>>>>()
+
     override suspend fun buscar(tabela: String, filtros: List<Pair<String, String>>): List<JsonObject> {
+        consultas += tabela to filtros
         var resultado = linhas(tabela)
         for ((chave, valor) in filtros) {
             resultado = when (chave) {

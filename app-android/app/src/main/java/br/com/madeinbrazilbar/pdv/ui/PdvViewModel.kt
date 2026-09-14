@@ -172,8 +172,12 @@ class PdvViewModel(app: Application) : AndroidViewModel(app) {
      * Quem esta operando. Sem senha por enquanto: o mecanismo de login do
      * colaborador no terminal ainda nao foi definido (codigo + PIN e o padrao
      * de salao). Isto e um marcador provisorio, nao uma decisao.
+     *
+     * Comeca no primeiro da equipe. Sem ninguem na equipe, fica um texto de
+     * reserva em vez de travar o app. Se chegar cardapio novo e essa pessoa
+     * nao estiver mais na equipe, o operador NAO muda sozinho no meio do turno.
      */
-    private val _operador = MutableStateFlow(cardapio.colaboradores.first().nome)
+    private val _operador = MutableStateFlow(cardapio.colaboradores.firstOrNull()?.nome ?: "Operador não escolhido")
     val operador: StateFlow<String> = _operador.asStateFlow()
     fun trocarOperador(nome: String) { _operador.value = nome }
 

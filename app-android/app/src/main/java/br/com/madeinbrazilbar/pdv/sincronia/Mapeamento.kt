@@ -88,6 +88,7 @@ object Mapeamento {
     const val PONTOS = "pdv_production_points"
     const val CATEGORIAS = "pdv_menu_categories"
     const val CARDAPIO = "pdv_menu_items"
+    const val EQUIPE = "pdv_collaborators"
 
     /**
      * No aparelho o ponto de produção é um código ("cozinha"); no servidor é

@@ -69,8 +69,8 @@ data class Cardapio(
 
         /**
          * Usa o cardápio baixado do servidor, se já existe; senão, o que vem
-         * dentro do app. Os colaboradores continuam vindo do app até a equipe
-         * ser cadastrada no servidor.
+         * dentro do app. A equipe também vem do arquivo baixado; só quando
+         * ele não tem ninguém é que valem os colaboradores de dentro do app.
          */
         fun carregar(context: Context): Cardapio {
             val texto = context.assets.open("cardapio.json")
@@ -79,7 +79,9 @@ data class Cardapio(
             val baixado = File(context.filesDir, ARQUIVO_SERVIDOR)
             if (!baixado.exists()) return doApp
             return try {
-                json.decodeFromString(serializer(), baixado.readText()).copy(colaboradores = doApp.colaboradores)
+                val doServidor = json.decodeFromString(serializer(), baixado.readText())
+                if (doServidor.colaboradores.isNotEmpty()) doServidor
+                else doServidor.copy(colaboradores = doApp.colaboradores)
             } catch (e: Exception) {
                 doApp
             }

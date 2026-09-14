@@ -5,6 +5,7 @@ import br.com.madeinbrazilbar.pdv.dados.BancoLocal
 import br.com.madeinbrazilbar.pdv.dados.Cardapio
 import br.com.madeinbrazilbar.pdv.dados.Categoria
 import br.com.madeinbrazilbar.pdv.dados.ChaveValor
+import br.com.madeinbrazilbar.pdv.dados.Colaborador
 import br.com.madeinbrazilbar.pdv.dados.ItemCardapio
 import br.com.madeinbrazilbar.pdv.dados.OperacaoSync
 import br.com.madeinbrazilbar.pdv.dados.PontoProducao
@@ -346,7 +347,12 @@ class MotorSincronizacao(
 
     /**
      * Baixa o cardápio do servidor no formato que o app já usa.
-     * Nunca troca o cardápio por um vazio: se vier incompleto, devolve null.
+     * Nunca troca o cardápio por um vazio: se faltar ponto, categoria ou item,
+     * devolve null.
+     *
+     * A equipe (quem pode ser escolhido como operador) também vem do servidor,
+     * só os ativos. Se o servidor ainda não tiver ninguém cadastrado, fica a
+     * equipe que o aparelho já tinha - e o cardápio é baixado do mesmo jeito.
      */
     suspend fun baixarCardapio(base: Cardapio): Cardapio? {
         val pontos = cliente.buscar(
@@ -365,6 +371,10 @@ class MotorSincronizacao(
                 "order" to "sort_order"
             )
         )
+        val equipe = cliente.buscar(
+            Mapeamento.EQUIPE,
+            listOf("select" to "id,name,role", "is_active" to "eq.true", "order" to "name")
+        )
         if (pontos.isEmpty() || categorias.isEmpty() || itens.isEmpty()) return null
 
         val slugPorId = categorias.associate { it.textoObrigatorio("id") to it.textoObrigatorio("slug") }
@@ -372,6 +382,14 @@ class MotorSincronizacao(
 
         return base.copy(
             aviso = "Cardápio baixado do servidor do PDV",
+            // equipe vazia no servidor não apaga a do aparelho
+            colaboradores = if (equipe.isEmpty()) base.colaboradores else equipe.map {
+                Colaborador(
+                    id = it.textoObrigatorio("id"),
+                    nome = it.textoObrigatorio("name"),
+                    funcao = it.texto("role") ?: ""
+                )
+            },
             pontosProducao = pontos.map {
                 PontoProducao(
                     id = it.textoObrigatorio("code"),
