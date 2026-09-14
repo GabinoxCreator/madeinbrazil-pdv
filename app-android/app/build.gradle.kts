@@ -27,8 +27,8 @@ android {
         applicationId = "br.com.madeinbrazilbar.pdv"
         minSdk = 24          // exigencia da Cielo
         targetSdk = 29       // piso exigido pela Cielo para distribuicao na Cielo Store
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3      // a Cielo exige versionCode maior a cada envio
+        versionName = "0.3.0"
 
         buildConfigField("String", "SERVIDOR_URL", credencial("servidor.url"))
         buildConfigField("String", "SERVIDOR_CHAVE_PUBLICA", credencial("servidor.chave_publica"))
@@ -43,8 +43,26 @@ android {
         buildConfigField("String", "CIELO_MERCHANT_CODE", credencial("cielo.merchant_code"))
     }
 
+    // Assinatura da versão de loja (Cielo). A chave (app-android/assinatura/pdv-release.jks)
+    // e as senhas (release.* em credenciais.properties) ficam FORA do git.
+    // PERDER A CHAVE = não conseguir mais atualizar o app nas maquininhas: guardar cópia.
+    val temAssinatura = credenciais.getProperty("release.store_file")?.let { rootProject.file(it).exists() } == true
+    signingConfigs {
+        if (temAssinatura) {
+            create("loja") {
+                storeFile = rootProject.file(credenciais.getProperty("release.store_file"))
+                storePassword = credenciais.getProperty("release.store_password")
+                keyAlias = credenciais.getProperty("release.key_alias")
+                keyPassword = credenciais.getProperty("release.key_password")
+                enableV1Signing = true
+                enableV2Signing = true   // a Cielo pede o esquema v2
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (temAssinatura) signingConfig = signingConfigs.getByName("loja")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -59,6 +77,10 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // O lint do Android recusa targetSdk 29 como "antigo" (regra da Google Play).
+    // Aqui é exigência da Cielo Smart (Android 10), e o app não vai pra Play Store.
+    lint { disable += "ExpiredTargetSdkVersion" }
 
     // permite testar o Room de verdade (banco em memoria) na JVM, sem emulador
     testOptions { unitTests { isIncludeAndroidResources = true } }
