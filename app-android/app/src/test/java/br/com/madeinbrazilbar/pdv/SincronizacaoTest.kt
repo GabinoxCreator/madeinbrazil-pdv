@@ -10,9 +10,13 @@ import br.com.madeinbrazilbar.pdv.sincronia.ErroServidor
 import br.com.madeinbrazilbar.pdv.sincronia.Mapeamento
 import br.com.madeinbrazilbar.pdv.sincronia.MotorSincronizacao
 import br.com.madeinbrazilbar.pdv.sincronia.Sincronia
+import br.com.madeinbrazilbar.pdv.sincronia.inteiro
 import br.com.madeinbrazilbar.pdv.sincronia.texto
 import br.com.madeinbrazilbar.pdv.sincronia.textoObrigatorio
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -511,6 +515,36 @@ class ServidorFalso : ClienteServidor {
             }
         }
         return resultado
+    }
+
+    // ------------------------------------------- funções (fila do delivery)
+
+    /** Trabalhos esperando na fila de impressão do delivery, na ordem. */
+    val filaDelivery = mutableListOf<JsonObject>()
+    /** Corpo de cada dlv_concluir_impressao recebido, na ordem. */
+    val conclusoesDelivery = mutableListOf<JsonObject>()
+    /** Nome de cada função chamada, na ordem. */
+    val chamadasRpc = mutableListOf<String>()
+    /** Simula a internet fora: toda função falha como falta de rede. */
+    var rpcForaDoAr = false
+
+    override suspend fun rpc(funcao: String, args: JsonObject): JsonElement {
+        chamadasRpc += funcao
+        if (rpcForaDoAr) throw ErroServidor("Sem conexão com o servidor: falha simulada", 0, true)
+        return when (funcao) {
+            "dlv_reservar_impressoes" -> {
+                val lote = filaDelivery.take((args.inteiro("p_limite") ?: 10L).toInt())
+                repeat(lote.size) { filaDelivery.removeAt(0) }
+                JsonArray(lote)
+            }
+            "dlv_concluir_impressao" -> {
+                conclusoesDelivery += args
+                // impresso: sai da fila do servidor mesmo que tenha voltado pra lá
+                if (args.texto("p_ok") == "true") filaDelivery.removeAll { it.texto("trabalho_id") == args.texto("p_trabalho") }
+                JsonNull
+            }
+            else -> throw ErroServidor("função $funcao não existe", 404, false)
+        }
     }
 
     /** "(a.eq.1,b.in.(x,y))" -> ["a.eq.1", "b.in.(x,y)"] */

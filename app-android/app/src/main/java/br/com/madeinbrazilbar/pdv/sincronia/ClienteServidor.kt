@@ -1,5 +1,6 @@
 package br.com.madeinbrazilbar.pdv.sincronia
 
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -28,4 +29,10 @@ interface ClienteServidor {
 
     /** Consulta com filtros no formato do servidor (ex.: "status" to "eq.aberta"). */
     suspend fun buscar(tabela: String, filtros: List<Pair<String, String>>): List<JsonObject>
+
+    /**
+     * Chama uma função do servidor (ex.: dlv_reservar_impressoes) e devolve a
+     * resposta como veio. Função sem retorno devolve JsonNull.
+     */
+    suspend fun rpc(funcao: String, args: JsonObject): JsonElement
 }

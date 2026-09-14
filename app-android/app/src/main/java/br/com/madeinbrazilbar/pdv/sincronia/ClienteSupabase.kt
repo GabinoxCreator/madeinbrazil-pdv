@@ -7,6 +7,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -157,5 +159,14 @@ class ClienteSupabase(
         val consulta = filtros.joinToString("&") { (chave, valor) -> chave + "=" + URLEncoder.encode(valor, "UTF-8") }
         val texto = chamar { it.url("$url/rest/v1/$tabela?$consulta").get() }
         return json.parseToJsonElement(texto).jsonArray.map { it.jsonObject }
+    }
+
+    override suspend fun rpc(funcao: String, args: JsonObject): JsonElement {
+        val texto = chamar {
+            it.url("$url/rest/v1/rpc/$funcao")
+                .post(args.toString().toRequestBody(tipoJson))
+        }
+        // função "returns void" responde 204 sem corpo
+        return if (texto.isBlank()) JsonNull else json.parseToJsonElement(texto)
     }
 }
