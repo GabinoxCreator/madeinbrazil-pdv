@@ -3,22 +3,55 @@ package br.com.madeinbrazilbar.pdv.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import br.com.madeinbrazilbar.pdv.BuildConfig
 import br.com.madeinbrazilbar.pdv.dados.*
 import br.com.madeinbrazilbar.pdv.impressao.FilaImpressao
+import br.com.madeinbrazilbar.pdv.sincronia.ClienteSupabase
+import br.com.madeinbrazilbar.pdv.sincronia.EstadoSincronia
+import br.com.madeinbrazilbar.pdv.sincronia.MotorSincronizacao
+import br.com.madeinbrazilbar.pdv.sincronia.Sincronia
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class PdvViewModel(app: Application) : AndroidViewModel(app) {
 
     val cardapio: Cardapio = Cardapio.carregar(app)
-    private val dao = BancoLocal.obter(app).dao()
-    private val repo = Repositorio(dao, cardapio)
+    private val banco = BancoLocal.obter(app)
+    private val dao = banco.dao()
 
-    private val caixa = RepositorioCaixa(dao)
+    /** Só liga a sincronização se o app foi compilado com as credenciais do terminal. */
+    private val sincronia: Sincronia? =
+        if (BuildConfig.SERVIDOR_URL.isNotBlank()) Sincronia(banco) else null
+
+    private val repo = Repositorio(dao, cardapio, sincronia)
+
+    private val caixa = RepositorioCaixa(dao, sincronia)
+
+    /** Motor de sincronização: envia a fila e traz o que outros terminais fizeram. */
+    private val motor: MotorSincronizacao? = sincronia?.let {
+        MotorSincronizacao(
+            banco,
+            ClienteSupabase(
+                BuildConfig.SERVIDOR_URL,
+                BuildConfig.SERVIDOR_CHAVE_PUBLICA,
+                BuildConfig.TERMINAL_EMAIL,
+                BuildConfig.TERMINAL_SENHA
+            )
+        ).also { m ->
+            m.iniciar(viewModelScope, { cardapio }) { novo -> Cardapio.salvar(getApplication(), novo) }
+        }
+    }
+
+    val estadoSincronia: StateFlow<EstadoSincronia> =
+        combine(motor?.estado ?: flowOf(EstadoSincronia(habilitada = false)), dao.operacoesPendentes()) { e, n ->
+            e.copy(pendentes = n)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, EstadoSincronia(habilitada = motor != null))
 
     val sessaoAberta: StateFlow<SessaoCaixa?> = caixa.sessaoAberta()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)

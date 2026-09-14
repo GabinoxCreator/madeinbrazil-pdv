@@ -3,6 +3,16 @@ package br.com.madeinbrazilbar.pdv.dados
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import java.util.UUID
+
+/*
+ * Cada registro que vai pro servidor tem, além do id local (Long), um `uuid`
+ * gerado NO APARELHO no momento em que nasce. É esse uuid que identifica o
+ * registro no servidor: o garçom lança offline, e quando a rede volta o
+ * registro sobe sem colidir com o de outro terminal - e subir duas vezes o
+ * mesmo registro não duplica nada.
+ */
+private fun novoUuid(): String = UUID.randomUUID().toString()
 
 object StatusComanda {
     const val ABERTA = "aberta"
@@ -25,7 +35,10 @@ object StatusImpressao {
     const val FALHA = "falha"
 }
 
-@Entity(tableName = "comandas", indices = [Index("numero"), Index("status")])
+@Entity(
+    tableName = "comandas",
+    indices = [Index("numero"), Index("status"), Index(value = ["uuid"], unique = true)]
+)
 data class Comanda(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val numero: Int,
@@ -42,10 +55,14 @@ data class Comanda(
     val primeiroPedidoEm: Long? = null,
     val fechadaEm: Long? = null,
     val ultimaAtividadePor: String? = null,
-    val ultimaAtividadeEm: Long? = null
+    val ultimaAtividadeEm: Long? = null,
+    val uuid: String = novoUuid()
 )
 
-@Entity(tableName = "pedidos", indices = [Index("comandaId")])
+@Entity(
+    tableName = "pedidos",
+    indices = [Index("comandaId"), Index(value = ["uuid"], unique = true)]
+)
 data class Pedido(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val comandaId: Long,
@@ -53,10 +70,14 @@ data class Pedido(
     val criadoPor: String,
     val criadoEm: Long,
     val statusImpressao: String = StatusImpressao.PENDENTE,
-    val erroImpressao: String? = null
+    val erroImpressao: String? = null,
+    val uuid: String = novoUuid()
 )
 
-@Entity(tableName = "itens", indices = [Index("comandaId"), Index("pedidoId")])
+@Entity(
+    tableName = "itens",
+    indices = [Index("comandaId"), Index("pedidoId"), Index(value = ["uuid"], unique = true)]
+)
 data class ItemLancado(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val pedidoId: Long,
@@ -72,7 +93,8 @@ data class ItemLancado(
     val status: String = StatusItem.ATIVO,
     val canceladoPor: String? = null,
     val canceladoMotivo: String? = null,
-    val canceladoEm: Long? = null
+    val canceladoEm: Long? = null,
+    val uuid: String = novoUuid()
 ) {
     val totalCentavos: Long get() = precoUnitCentavos * quantidade
 }
@@ -93,6 +115,8 @@ object TipoImpressao {
  * travava a tela por ~15s quando as termicas estavam fora do ar - inviavel no
  * meio do almoco. Agora o lancamento grava, enfileira e devolve na hora; a
  * fila tenta imprimir por conta propria.
+ *
+ * Fica só no aparelho: não vai pro servidor. Quem imprime é o terminal.
  */
 @Entity(tableName = "impressoes", indices = [Index("status")])
 data class TrabalhoImpressao(
@@ -154,7 +178,10 @@ object MetodoPagamento {
     }
 }
 
-@Entity(tableName = "sessoes_caixa", indices = [Index("status")])
+@Entity(
+    tableName = "sessoes_caixa",
+    indices = [Index("status"), Index(value = ["uuid"], unique = true)]
+)
 data class SessaoCaixa(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val abertaPor: String,
@@ -166,10 +193,14 @@ data class SessaoCaixa(
     /** Dinheiro efetivamente contado na gaveta no fechamento. */
     val contadoCentavos: Long? = null,
     val status: String = StatusSessao.ABERTA,
-    val observacao: String? = null
+    val observacao: String? = null,
+    val uuid: String = novoUuid()
 )
 
-@Entity(tableName = "movimentos_caixa", indices = [Index("sessaoId")])
+@Entity(
+    tableName = "movimentos_caixa",
+    indices = [Index("sessaoId"), Index(value = ["uuid"], unique = true)]
+)
 data class MovimentoCaixa(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val sessaoId: Long,
@@ -177,7 +208,8 @@ data class MovimentoCaixa(
     val valorCentavos: Long,
     val motivo: String,
     val criadoPor: String,
-    val criadoEm: Long
+    val criadoEm: Long,
+    val uuid: String = novoUuid()
 )
 
 /**
@@ -188,7 +220,10 @@ data class MovimentoCaixa(
  * -> valor=50, troco=50, e a gaveta cresce 50. Somar troco aqui inflaria o
  * fechamento.
  */
-@Entity(tableName = "pagamentos", indices = [Index("comandaId"), Index("sessaoId")])
+@Entity(
+    tableName = "pagamentos",
+    indices = [Index("comandaId"), Index("sessaoId"), Index(value = ["uuid"], unique = true)]
+)
 data class Pagamento(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val comandaId: Long,
@@ -203,5 +238,42 @@ data class Pagamento(
     val cieloAutorizacao: String? = null,
     val cieloTransacaoId: String? = null,
     /** Reservado para o modulo fiscal, fora do escopo desta versao. */
-    val referenciaFiscal: String? = null
+    val referenciaFiscal: String? = null,
+    val uuid: String = novoUuid()
+)
+
+// ===================================================================
+// SINCRONIZAÇÃO
+// ===================================================================
+
+object TipoOperacao {
+    const val INSERIR = "inserir"
+    const val ATUALIZAR = "atualizar"
+}
+
+/**
+ * Fila de envio pro servidor. Toda gravação que precisa subir entra aqui NA
+ * MESMA TRANSAÇÃO da gravação local: ou as duas coisas acontecem, ou nenhuma.
+ * O motor manda em ordem de chegada e só apaga depois que o servidor aceitou.
+ * Se uma operação falha, ele para ali e tenta de novo depois - nunca pula.
+ */
+@Entity(tableName = "sync_operacoes", indices = [Index("registroUuid")])
+data class OperacaoSync(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val tabela: String,
+    val tipo: String,
+    val registroUuid: String,
+    /** JSON do que vai pro servidor. */
+    val payload: String,
+    val criadaEm: Long,
+    val tentativas: Int = 0,
+    val ultimoErro: String? = null,
+    val ultimaTentativaEm: Long? = null
+)
+
+/** Pequenos valores de controle (ex.: até onde já recebi do servidor). */
+@Entity(tableName = "chave_valor")
+data class ChaveValor(
+    @PrimaryKey val chave: String,
+    val valor: String
 )

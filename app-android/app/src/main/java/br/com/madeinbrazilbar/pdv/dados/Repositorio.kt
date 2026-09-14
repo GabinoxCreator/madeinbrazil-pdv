@@ -1,6 +1,8 @@
 package br.com.madeinbrazilbar.pdv.dados
 
 import br.com.madeinbrazilbar.pdv.impressao.Cupons
+import br.com.madeinbrazilbar.pdv.sincronia.Mapeamento
+import br.com.madeinbrazilbar.pdv.sincronia.Sincronia
 import kotlinx.coroutines.flow.Flow
 
 /** Um item escolhido no cardapio, antes de virar lancamento. */
@@ -18,18 +20,26 @@ sealed class ResultadoOperacao {
 /**
  * Regras da operacao de comanda.
  *
- * Enquanto nao existe servidor, as guardas de negocio vivem aqui. Quando as
- * Edge Functions do PDV existirem, esta classe passa a chamar o servidor e
- * as guardas passam a ser validadas dos dois lados.
+ * Tudo grava primeiro no aparelho. Quando existe `sincronia`, cada gravação
+ * também registra, na mesma transação, o que precisa subir pro servidor.
+ * O banco do servidor repete as travas mais importantes (caixa aberto,
+ * número de comanda único), então elas valem dos dois lados.
  */
 class Repositorio(
     private val dao: PdvDao,
-    val cardapio: Cardapio
+    val cardapio: Cardapio,
+    private val sincronia: Sincronia? = null
 ) {
 
     fun comandasVivas(): Flow<List<Comanda>> = dao.comandasVivas()
     fun comanda(id: Long): Flow<Comanda?> = dao.comanda(id)
     fun itensDaComanda(id: Long): Flow<List<ItemLancado>> = dao.itensDaComanda(id)
+
+    /** Gravação local + registro de envio: ou as duas coisas, ou nenhuma. */
+    private suspend fun <T> transacao(bloco: suspend () -> T): T {
+        val s = sincronia ?: return bloco()
+        return s.emTransacao(bloco)
+    }
 
     // ---------------------------------------------------------------- abrir
 
@@ -52,20 +62,22 @@ class Repositorio(
             return ResultadoOperacao.Erro("A comanda $numero já está aberta")
         }
         val agora = System.currentTimeMillis()
-        dao.inserirComanda(
-            Comanda(
-                numero = numero,
-                mesa = mesa?.takeIf { it.isNotBlank() },
-                pessoas = pessoas.coerceAtLeast(1),
-                cliente = cliente?.takeIf { it.isNotBlank() },
-                controle = controle,
-                taxaServicoPct = if (controle) 0.0 else Configuracao.TAXA_SERVICO_PCT,
-                abertaPor = operador,
-                abertaEm = agora,
-                ultimaAtividadePor = operador,
-                ultimaAtividadeEm = agora
-            )
+        val comanda = Comanda(
+            numero = numero,
+            mesa = mesa?.takeIf { it.isNotBlank() },
+            pessoas = pessoas.coerceAtLeast(1),
+            cliente = cliente?.takeIf { it.isNotBlank() },
+            controle = controle,
+            taxaServicoPct = if (controle) 0.0 else Configuracao.TAXA_SERVICO_PCT,
+            abertaPor = operador,
+            abertaEm = agora,
+            ultimaAtividadePor = operador,
+            ultimaAtividadeEm = agora
         )
+        transacao {
+            dao.inserirComanda(comanda)
+            sincronia?.inserir(Mapeamento.COMANDAS, comanda.uuid, Mapeamento.comanda(comanda))
+        }
         return ResultadoOperacao.Ok("Comanda $numero aberta")
     }
 
@@ -93,21 +105,32 @@ class Repositorio(
         }
 
         val agora = System.currentTimeMillis()
-        val pedidoId = dao.lancarPedido(
-            Pedido(comandaId = comandaId, mesa = comanda.mesa, criadoPor = operador, criadoEm = agora)
-        ) { novoId ->
-            escolhidos.map { e ->
-                ItemLancado(
-                    pedidoId = novoId,
-                    comandaId = comandaId,
-                    itemCardapioId = e.item.id,
-                    nome = e.item.nome,
-                    quantidade = e.quantidade,
-                    precoUnitCentavos = e.item.precoCentavos,
-                    pontoId = e.item.ponto,
-                    observacao = e.observacao
-                )
+        val pedido = Pedido(comandaId = comandaId, mesa = comanda.mesa, criadoPor = operador, criadoEm = agora)
+        val pedidoId = transacao {
+            val novoPedidoId = dao.lancarPedido(pedido) { novoId ->
+                escolhidos.map { e ->
+                    ItemLancado(
+                        pedidoId = novoId,
+                        comandaId = comandaId,
+                        itemCardapioId = e.item.id,
+                        nome = e.item.nome,
+                        quantidade = e.quantidade,
+                        precoUnitCentavos = e.item.precoCentavos,
+                        pontoId = e.item.ponto,
+                        observacao = e.observacao
+                    )
+                }
             }
+            sincronia?.let { s ->
+                s.inserir(Mapeamento.PEDIDOS, pedido.uuid, Mapeamento.pedido(pedido, comanda.uuid))
+                dao.itensDoPedido(novoPedidoId).forEach { i ->
+                    s.inserir(Mapeamento.ITENS, i.uuid, Mapeamento.item(i, pedido.uuid, comanda.uuid, agora))
+                }
+                dao.comandaAgora(comandaId)?.let { atual ->
+                    s.atualizar(Mapeamento.COMANDAS, atual.uuid, Mapeamento.atividade(atual, primeiroPedido = true))
+                }
+            }
+            novoPedidoId
         }
 
         enfileirarPedido(pedidoId, comanda, operador, agora)
@@ -154,7 +177,21 @@ class Repositorio(
 
     suspend fun cancelarItem(itemId: Long, motivo: String, operador: String): ResultadoOperacao {
         if (motivo.isBlank()) return ResultadoOperacao.Erro("Informe o motivo do cancelamento")
-        dao.cancelarItem(itemId, operador, motivo, System.currentTimeMillis())
+        val item = dao.itemAgora(itemId) ?: return ResultadoOperacao.Erro("Item não encontrado")
+        val agora = System.currentTimeMillis()
+        transacao {
+            dao.cancelarItem(itemId, operador, motivo, agora)
+            val comanda = dao.comandaAgora(item.comandaId)
+                ?.copy(ultimaAtividadePor = operador, ultimaAtividadeEm = agora)
+            if (comanda != null) dao.atualizarComanda(comanda)
+            sincronia?.let { s ->
+                dao.itemAgora(itemId)?.let { cancelado ->
+                    s.atualizar(Mapeamento.ITENS, cancelado.uuid, Mapeamento.cancelamento(cancelado))
+                }
+                // mexer na comanda avisa os outros terminais que ela mudou
+                if (comanda != null) s.atualizar(Mapeamento.COMANDAS, comanda.uuid, Mapeamento.atividade(comanda))
+            }
+        }
         return ResultadoOperacao.Ok("Item cancelado")
     }
 
@@ -174,13 +211,15 @@ class Repositorio(
     ): ResultadoOperacao {
         val comanda = dao.comandaAgora(comandaId)
             ?: return ResultadoOperacao.Erro("Comanda não encontrada")
-        dao.atualizarComanda(
-            comanda.copy(
-                pessoas = pessoas.coerceAtLeast(1),
-                taxaServicoPct = if (cobrarServico) Configuracao.TAXA_SERVICO_PCT else 0.0,
-                descontoCentavos = descontoCentavos.coerceAtLeast(0)
-            )
+        val ajustada = comanda.copy(
+            pessoas = pessoas.coerceAtLeast(1),
+            taxaServicoPct = if (cobrarServico) Configuracao.TAXA_SERVICO_PCT else 0.0,
+            descontoCentavos = descontoCentavos.coerceAtLeast(0)
         )
+        transacao {
+            dao.atualizarComanda(ajustada)
+            sincronia?.atualizar(Mapeamento.COMANDAS, ajustada.uuid, Mapeamento.ajusteDeConta(ajustada))
+        }
         return ResultadoOperacao.Ok("Conta atualizada")
     }
 
@@ -191,14 +230,16 @@ class Repositorio(
             return ResultadoOperacao.Erro("Comanda ${comanda.numero} já está ${comanda.status}")
         }
         val agora = System.currentTimeMillis()
-        dao.atualizarComanda(
-            comanda.copy(
-                status = StatusComanda.FECHADA,
-                fechadaEm = agora,
-                ultimaAtividadePor = operador,
-                ultimaAtividadeEm = agora
-            )
+        val fechada = comanda.copy(
+            status = StatusComanda.FECHADA,
+            fechadaEm = agora,
+            ultimaAtividadePor = operador,
+            ultimaAtividadeEm = agora
         )
+        transacao {
+            dao.atualizarComanda(fechada)
+            sincronia?.atualizar(Mapeamento.COMANDAS, fechada.uuid, Mapeamento.situacao(fechada))
+        }
         return ResultadoOperacao.Ok("Comanda ${comanda.numero} fechada")
     }
 
@@ -208,14 +249,16 @@ class Repositorio(
         if (comanda.status != StatusComanda.FECHADA) {
             return ResultadoOperacao.Erro("Só dá para reabrir comanda fechada")
         }
-        dao.atualizarComanda(
-            comanda.copy(
-                status = StatusComanda.ABERTA,
-                fechadaEm = null,
-                ultimaAtividadePor = operador,
-                ultimaAtividadeEm = System.currentTimeMillis()
-            )
+        val reaberta = comanda.copy(
+            status = StatusComanda.ABERTA,
+            fechadaEm = null,
+            ultimaAtividadePor = operador,
+            ultimaAtividadeEm = System.currentTimeMillis()
         )
+        transacao {
+            dao.atualizarComanda(reaberta)
+            sincronia?.atualizar(Mapeamento.COMANDAS, reaberta.uuid, Mapeamento.situacao(reaberta))
+        }
         return ResultadoOperacao.Ok("Comanda ${comanda.numero} reaberta")
     }
 

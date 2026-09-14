@@ -8,14 +8,19 @@ import androidx.room.RoomDatabase
 /**
  * Banco local do aparelho. O app e offline-first por exigencia da operacao:
  * se a internet do bar cair no meio do almoco, o lancamento continua.
- * A sincronizacao com o servidor entra depois - nada aqui depende dela.
+ * O que precisa subir pro servidor fica na fila `sync_operacoes`.
+ *
+ * ATENÇÃO: `fallbackToDestructiveMigration` apaga o banco local quando a
+ * versão muda. Serve enquanto só existe dado de teste; antes de operar de
+ * verdade, trocar por migrações escritas à mão.
  */
 @Database(
     entities = [
         Comanda::class, Pedido::class, ItemLancado::class, TrabalhoImpressao::class,
-        SessaoCaixa::class, MovimentoCaixa::class, Pagamento::class
+        SessaoCaixa::class, MovimentoCaixa::class, Pagamento::class,
+        OperacaoSync::class, ChaveValor::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class BancoLocal : RoomDatabase() {

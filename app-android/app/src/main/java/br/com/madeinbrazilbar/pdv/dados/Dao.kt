@@ -2,6 +2,7 @@ package br.com.madeinbrazilbar.pdv.dados
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
@@ -106,6 +107,68 @@ interface PdvDao {
 
     @Query("SELECT COALESCE(SUM(valorCentavos),0) FROM pagamentos WHERE comandaId = :comandaId")
     suspend fun totalPagoDaComanda(comandaId: Long): Long
+
+    // ---------------- busca pelo id do servidor (uuid) ----------------
+
+    @Query("SELECT * FROM comandas WHERE uuid = :uuid")
+    suspend fun comandaPorUuid(uuid: String): Comanda?
+
+    @Query("SELECT * FROM pedidos WHERE uuid = :uuid")
+    suspend fun pedidoPorUuid(uuid: String): Pedido?
+
+    @Query("SELECT * FROM itens WHERE uuid = :uuid")
+    suspend fun itemPorUuid(uuid: String): ItemLancado?
+
+    @Query("SELECT * FROM itens WHERE id = :id")
+    suspend fun itemAgora(id: Long): ItemLancado?
+
+    @Insert
+    suspend fun inserirItem(i: ItemLancado): Long
+
+    @Update
+    suspend fun atualizarItem(i: ItemLancado)
+
+    @Query("SELECT * FROM sessoes_caixa WHERE uuid = :uuid")
+    suspend fun sessaoPorUuid(uuid: String): SessaoCaixa?
+
+    @Query("SELECT * FROM movimentos_caixa WHERE uuid = :uuid")
+    suspend fun movimentoPorUuid(uuid: String): MovimentoCaixa?
+
+    @Query("SELECT * FROM pagamentos WHERE uuid = :uuid")
+    suspend fun pagamentoPorUuid(uuid: String): Pagamento?
+
+    // ---------------- fila de envio pro servidor ----------------
+
+    @Insert
+    suspend fun inserirOperacao(op: OperacaoSync): Long
+
+    @Query("SELECT * FROM sync_operacoes ORDER BY id LIMIT 1")
+    suspend fun proximaOperacao(): OperacaoSync?
+
+    @Query("SELECT * FROM sync_operacoes ORDER BY id")
+    suspend fun todasOperacoes(): List<OperacaoSync>
+
+    @Query("DELETE FROM sync_operacoes WHERE id = :id")
+    suspend fun removerOperacao(id: Long)
+
+    @Query("""UPDATE sync_operacoes SET tentativas = tentativas + 1, ultimoErro = :erro,
+              ultimaTentativaEm = :quando WHERE id = :id""")
+    suspend fun registrarFalhaOperacao(id: Long, erro: String, quando: Long)
+
+    @Query("SELECT COUNT(*) FROM sync_operacoes")
+    fun operacoesPendentes(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM sync_operacoes")
+    suspend fun operacoesPendentesAgora(): Int
+
+    @Query("SELECT COUNT(*) FROM sync_operacoes WHERE registroUuid = :uuid")
+    suspend fun operacoesDoRegistro(uuid: String): Int
+
+    @Query("SELECT valor FROM chave_valor WHERE chave = :chave")
+    suspend fun lerValor(chave: String): String?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun gravarValor(cv: ChaveValor)
 
     // ---------------- fila de impressao ----------------
 

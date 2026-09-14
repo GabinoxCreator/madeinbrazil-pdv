@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.File
 
 @Serializable
 data class PontoProducao(
@@ -58,12 +59,37 @@ data class Cardapio(
     val itensAConfirmar: Int get() = itens.count { !it.pontoConfirmado }
 
     companion object {
-        private val json = Json { ignoreUnknownKeys = true }
+        private val json = Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
 
+        /** Cópia do cardápio que veio do servidor, guardada no aparelho. */
+        const val ARQUIVO_SERVIDOR = "cardapio-servidor.json"
+
+        /**
+         * Usa o cardápio baixado do servidor, se já existe; senão, o que vem
+         * dentro do app. Os colaboradores continuam vindo do app até a equipe
+         * ser cadastrada no servidor.
+         */
         fun carregar(context: Context): Cardapio {
             val texto = context.assets.open("cardapio.json")
                 .bufferedReader(Charsets.UTF_8).use { it.readText() }
-            return json.decodeFromString(serializer(), texto)
+            val doApp = json.decodeFromString(serializer(), texto)
+            val baixado = File(context.filesDir, ARQUIVO_SERVIDOR)
+            if (!baixado.exists()) return doApp
+            return try {
+                json.decodeFromString(serializer(), baixado.readText()).copy(colaboradores = doApp.colaboradores)
+            } catch (e: Exception) {
+                doApp
+            }
+        }
+
+        /** Grava o cardápio do servidor. Vale a partir da próxima vez que o app abrir. */
+        fun salvar(context: Context, cardapio: Cardapio) {
+            val temporario = File(context.filesDir, "$ARQUIVO_SERVIDOR.tmp")
+            temporario.writeText(json.encodeToString(serializer(), cardapio))
+            temporario.renameTo(File(context.filesDir, ARQUIVO_SERVIDOR))
         }
     }
 }

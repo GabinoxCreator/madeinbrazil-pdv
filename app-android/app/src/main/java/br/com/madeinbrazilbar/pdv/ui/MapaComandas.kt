@@ -27,8 +27,10 @@ fun MapaComandas(
 ) {
     val comandas by vm.comandas.collectAsState()
     val operador by vm.operador.collectAsState()
+    val sincronia by vm.estadoSincronia.collectAsState()
     var mostrarNova by remember { mutableStateOf(false) }
     var mostrarOperador by remember { mutableStateOf(false) }
+    var mostrarServidor by remember { mutableStateOf(false) }
     var busca by remember { mutableStateOf("") }
 
     val filtradas = remember(comandas, busca) {
@@ -81,6 +83,26 @@ fun MapaComandas(
                 }
             }
 
+            // situação da conversa com o servidor
+            val (textoServidor, corServidor) = when {
+                !sincronia.habilitada -> "Servidor: desligado (app sem credenciais)" to VermelhoAlerta
+                sincronia.ultimoErro != null && sincronia.pendentes > 0 ->
+                    "Servidor: sem enviar · ${sincronia.pendentes} pendente(s)" to VermelhoAlerta
+                sincronia.ultimoErro != null -> "Servidor: com problema" to VermelhoAlerta
+                sincronia.pendentes > 0 -> "Servidor: enviando ${sincronia.pendentes}…" to AzulMarca
+                sincronia.ultimaSincronizacaoEm == null -> "Servidor: conectando…" to AzulMarca
+                else -> "Servidor: sincronizado" to VerdeOk
+            }
+            Text(
+                textoServidor,
+                fontSize = 12.sp,
+                color = corServidor,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 6.dp)
+                    .clickable { mostrarServidor = true }
+            )
+
             OutlinedTextField(
                 value = busca,
                 onValueChange = { busca = it },
@@ -111,6 +133,36 @@ fun MapaComandas(
                 }
             }
         }
+    }
+
+    if (mostrarServidor) {
+        AlertDialog(
+            onDismissRequest = { mostrarServidor = false },
+            title = { Text("Servidor") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (!sincronia.habilitada) {
+                        Text("Este app foi instalado sem as credenciais do terminal. Ele funciona, mas só guarda no aparelho.")
+                    } else {
+                        Text("Aguardando envio: ${sincronia.pendentes}")
+                        Text(
+                            "Última sincronização: " +
+                                (sincronia.ultimaSincronizacaoEm?.let { tempoDesde(it) } ?: "ainda não")
+                        )
+                        Text(
+                            "Sem internet o app continua funcionando normalmente. " +
+                                "O que ficar pendente sobe sozinho quando a rede voltar.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        sincronia.ultimoErro?.let {
+                            Text("Último erro: $it", fontSize = 12.sp, color = VermelhoAlerta)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { mostrarServidor = false }) { Text("Fechar") } }
+        )
     }
 
     if (mostrarNova) {
