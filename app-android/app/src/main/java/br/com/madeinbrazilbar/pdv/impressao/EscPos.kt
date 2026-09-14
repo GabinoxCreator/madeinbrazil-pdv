@@ -61,6 +61,24 @@ class EscPos {
         if (atual.toString().isNotBlank()) linha(atual.toString().trimEnd())
     }
 
+    /**
+     * QR Code nativo da térmica (GS ( k, modelo 2). Na prévia vira só um
+     * marcador. Suporte na Elgin i9 ainda a confirmar no papel: por isso quem
+     * usa imprime o conteúdo em texto também.
+     */
+    fun qrCode(conteudo: String, modulo: Int = 6) = apply {
+        val dados = conteudo.toByteArray(Charsets.US_ASCII)
+        val tamanho = dados.size + 3
+        cru(0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00)      // modelo 2
+        cru(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, modulo)          // tamanho do módulo
+        cru(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31)            // correção de erro M
+        cru(0x1D, 0x28, 0x6B, tamanho and 0xFF, tamanho shr 8, 0x31, 0x50, 0x30)
+        for (b in dados) buffer.add(b)
+        cru(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30)            // imprime
+        cru(0x0A)
+        previa.append("[QR CODE]\n")
+    }
+
     fun avancar(linhas: Int = 3) = apply { repeat(linhas) { texto("\n") } }
 
     fun cortar() = apply { cru(0x1D, 0x56, 0x42, 0x00) }

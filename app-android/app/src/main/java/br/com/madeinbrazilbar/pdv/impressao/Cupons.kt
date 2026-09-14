@@ -232,6 +232,180 @@ object Cupons {
         .avancar(3)
         .cortar()
 
+    // ------------------------------------------------------------- delivery
+
+    private fun horaDoPedido(p: PedidoDelivery) = p.criadoEm?.let { horario.format(Date(it)) } ?: "-"
+
+    private fun modo(p: PedidoDelivery) = if (p.entrega) "ENTREGA" else "RETIRADA"
+
+    private fun rotuloPagamento(forma: String?) = when (forma) {
+        "pix_online" -> "Pix online"
+        "pix_entrega" -> "Pix na entrega"
+        "dinheiro" -> "Dinheiro"
+        "credito" -> "Crédito"
+        "debito" -> "Débito"
+        null -> "-"
+        else -> forma
+    }
+
+    /** Complementos indentados embaixo do item, e a observação do item. */
+    private fun EscPos.detalhesDoItem(item: ItemDelivery) {
+        for (o in item.opcoes) {
+            val qtd = if (o.quantidade > 1) "${o.quantidade}x " else ""
+            val grupo = o.grupo?.takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
+            paragrafo("+ $grupo$qtd${o.nome}", recuo = "   ")
+        }
+        item.observacao?.takeIf { it.isNotBlank() }?.let { paragrafo("obs: $it", recuo = "   ") }
+    }
+
+    /**
+     * Produção do delivery: só os itens deste ponto. Sem preço, como o
+     * pedido de produção do salão.
+     */
+    fun deliveryProducao(t: TrabalhoDelivery, pontoNome: String): EscPos = EscPos()
+        .inicializar()
+        .centralizado()
+        .dobrado(true).negrito(true)
+        .linha("DELIVERY #${t.pedido.numero}")
+        .linha(modo(t.pedido))
+        .dobrado(false).negrito(false)
+        .linha(pontoNome.uppercase())
+        .separador('=')
+        .aEsquerda()
+        .apply {
+            colunas("Hora", horaDoPedido(t.pedido))
+            separador()
+            for (item in t.itens) {
+                negrito(true)
+                colunas("${item.quantidade}x ${item.nome}", "")
+                negrito(false)
+                detalhesDoItem(item)
+            }
+            separador()
+            t.pedido.observacao?.takeIf { it.isNotBlank() }?.let {
+                negrito(true).linha("OBS DO PEDIDO").negrito(false)
+                paragrafo(it)
+                separador()
+            }
+        }
+        .avancar(3)
+        .cortar()
+
+    /** Via de entrega: o pedido inteiro, para o caixa e o motoboy. */
+    fun deliveryViaEntrega(t: TrabalhoDelivery): EscPos = EscPos()
+        .inicializar()
+        .centralizado()
+        .negrito(true).linha(Configuracao.CABECALHO_CUPOM).negrito(false)
+        .dobrado(true).negrito(true)
+        .linha("DELIVERY #${t.pedido.numero}")
+        .linha(modo(t.pedido))
+        .dobrado(false).negrito(false)
+        .separador('=')
+        .aEsquerda()
+        .apply {
+            val p = t.pedido
+            colunas("Hora", horaDoPedido(p))
+            p.cliente?.takeIf { it.isNotBlank() }?.let { colunas("Cliente", it) }
+            p.telefone?.takeIf { it.isNotBlank() }?.let { colunas("Telefone", it) }
+
+            p.endereco?.let { e ->
+                separador()
+                negrito(true).linha("ENDEREÇO").negrito(false)
+                val ruaNumero = listOfNotNull(e.rua?.takeIf { it.isNotBlank() }, e.numero?.takeIf { it.isNotBlank() })
+                    .joinToString(", ")
+                paragrafo(listOf(ruaNumero, e.bairro.orEmpty()).filter { it.isNotBlank() }.joinToString(" - "))
+                e.complemento?.takeIf { it.isNotBlank() }?.let { paragrafo("Compl.: $it") }
+                e.referencia?.takeIf { it.isNotBlank() }?.let { paragrafo("Ref.: $it") }
+                e.distanciaKm?.let {
+                    colunas("Distância", String.format(Locale("pt", "BR"), "%.1f km", it))
+                }
+            }
+
+            separador()
+            for (item in t.itens) {
+                colunas("${item.quantidade}x ${item.nome}", item.totalCentavos?.let { Dinheiro.formatar(it) } ?: "")
+                detalhesDoItem(item)
+            }
+            separador()
+            colunas("Subtotal", Dinheiro.formatar(p.subtotalCentavos))
+            if (p.taxaEntregaCentavos > 0 || p.entrega) {
+                colunas("Taxa de entrega", Dinheiro.formatar(p.taxaEntregaCentavos))
+            }
+            if (p.descontoCentavos > 0) {
+                colunas("Desconto", "-" + Dinheiro.formatar(p.descontoCentavos))
+            }
+            separador('=')
+            negrito(true)
+            dobrado(true)
+            colunas("TOTAL", Dinheiro.formatar(p.totalCentavos))
+            dobrado(false)
+            negrito(false)
+
+            colunas("Pagamento", rotuloPagamento(p.pagamento))
+            if (p.pago) {
+                centralizado().dobrado(true).negrito(true).linha("PAGO").dobrado(false).negrito(false).aEsquerda()
+            }
+            p.trocoParaCentavos?.takeIf { it > 0 }?.let {
+                centralizado().dobrado(true).negrito(true)
+                linha("TROCO PARA ${Dinheiro.comSimbolo(it)}")
+                dobrado(false).negrito(false).aEsquerda()
+            }
+
+            p.observacao?.takeIf { it.isNotBlank() }?.let {
+                separador()
+                negrito(true).linha("OBS DO PEDIDO").negrito(false)
+                paragrafo(it)
+            }
+            p.motoboy?.takeIf { it.isNotBlank() }?.let {
+                separador()
+                colunas("Motoboy", it)
+            }
+
+            p.endereco?.mapaUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                separador()
+                linha("Mapa:")
+                // link sem espaço: quebra em pedaços da largura da bobina
+                url.chunked(EscPos.COLUNAS).forEach { linha(it) }
+                if (url.length <= 300 && url.all { it.code < 128 }) {
+                    centralizado()
+                    qrCode(url)
+                    aEsquerda()
+                }
+            }
+
+            linha()
+            centralizado()
+            linha(Configuracao.RODAPE_CUPOM)
+        }
+        .avancar(3)
+        .cortar()
+
+    /** Aviso para quem já recebeu a produção de um pedido que foi cancelado. */
+    fun deliveryCancelamento(t: TrabalhoDelivery, pontoNome: String): EscPos = EscPos()
+        .inicializar()
+        .centralizado()
+        .dobrado(true).negrito(true)
+        .linha("PEDIDO #${t.pedido.numero}")
+        .linha("CANCELADO")
+        .dobrado(false).negrito(false)
+        .linha("DELIVERY · ${pontoNome.uppercase()}")
+        .separador('=')
+        .aEsquerda()
+        .apply {
+            colunas("Hora do pedido", horaDoPedido(t.pedido))
+            separador()
+            negrito(true).linha("MOTIVO").negrito(false)
+            paragrafo(t.pedido.motivoCancelamento?.takeIf { it.isNotBlank() } ?: "não informado")
+            if (t.itens.isNotEmpty()) {
+                separador()
+                negrito(true).linha("NÃO PRODUZIR").negrito(false)
+                for (item in t.itens) linha("${item.quantidade}x ${item.nome}")
+            }
+            separador()
+        }
+        .avancar(3)
+        .cortar()
+
     /** Mensagem avulsa para um ponto de producao. */
     fun mensagem(pontoNome: String, texto: String, de: String, quando: Long): EscPos = EscPos()
         .inicializar()
