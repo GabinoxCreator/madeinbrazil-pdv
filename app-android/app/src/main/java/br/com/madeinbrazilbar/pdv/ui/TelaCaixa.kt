@@ -46,6 +46,7 @@ fun TelaCaixa(vm: PdvViewModel, aoVoltar: () -> Unit) {
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (ocupado) LinearProgressIndicator(Modifier.fillMaxWidth())
+            AvisoMaquininhaPendente(vm)
             val s = sessao
             if (s == null) AbrirCaixa(vm) else CaixaAberto(vm, s)
         }

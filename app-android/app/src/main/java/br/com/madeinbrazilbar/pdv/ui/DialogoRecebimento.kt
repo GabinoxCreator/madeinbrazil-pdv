@@ -6,16 +6,23 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.madeinbrazilbar.pdv.dados.*
+import br.com.madeinbrazilbar.pdv.pagamento.CieloSmart
 
 /**
  * Recebimento de uma comanda. Aceita pagamento parcial e varias formas na
  * mesma conta - a operacao atual ja faz isso, entao o PDV precisa fazer.
+ *
+ * Na Cielo Smart (maquininha disponível), cartão/pix/voucher são cobrados na
+ * própria maquininha; "Registrar sem maquininha" fica como plano B pra quando
+ * o valor já foi cobrado por fora. Dinheiro continua igual.
  */
 @Composable
 fun DialogoRecebimento(
@@ -23,8 +30,10 @@ fun DialogoRecebimento(
     comanda: Comanda,
     aoFechar: () -> Unit
 ) {
+    val contexto = LocalContext.current
     val sessao by vm.sessaoAberta.collectAsState()
     val pagamentos by vm.pagamentosDaComanda(comanda.id).collectAsState(initial = emptyList())
+    val pendenteMaquininha by vm.pendenteMaquininha.collectAsState()
     var saldo by remember { mutableStateOf<SaldoComanda?>(null) }
 
     var metodo by remember { mutableStateOf(MetodoPagamento.DINHEIRO) }
@@ -44,6 +53,10 @@ fun DialogoRecebimento(
     val entregueCentavos = reaisParaCentavos(entregue)
     val troco = if (metodo == MetodoPagamento.DINHEIRO && entregueCentavos != null)
         (entregueCentavos - valorCentavos) else null
+    val naMaquininha = vm.maquininhaDisponivel && CieloSmart.codigoPagamento(metodo) != null
+    val podeReceber = sessao != null && s != null && valorCentavos > 0 &&
+        valorCentavos <= (s?.faltaCentavos ?: 0L) &&
+        (troco == null || troco >= 0)
 
     AlertDialog(
         onDismissRequest = aoFechar,
@@ -116,6 +129,22 @@ fun DialogoRecebimento(
                     }
                 }
 
+                if (naMaquininha) {
+                    if (pendenteMaquininha != null) {
+                        Text(
+                            "Há um pagamento na maquininha sem confirmação. Resolva o aviso " +
+                                "na tela da comanda antes de cobrar outro.",
+                            color = VermelhoAlerta, fontSize = 12.sp
+                        )
+                    } else {
+                        Text(
+                            "O valor é cobrado na maquininha. Use \"Registrar sem maquininha\" " +
+                                "só se já cobrou por fora.",
+                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 if (valorCentavos in 1 until s.faltaCentavos) {
                     Text(
                         "Pagamento parcial: sobra ${Dinheiro.comSimbolo(s.faltaCentavos - valorCentavos)} " +
@@ -138,18 +167,37 @@ fun DialogoRecebimento(
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    vm.receber(
-                        comanda.id, metodo, valorCentavos,
-                        if (metodo == MetodoPagamento.DINHEIRO) entregueCentavos else null
-                    )
-                    aoFechar()
-                },
-                enabled = sessao != null && s != null && valorCentavos > 0 &&
-                    valorCentavos <= (s?.faltaCentavos ?: 0L) &&
-                    (troco == null || troco >= 0)
-            ) { Text("Receber") }
+            if (naMaquininha) {
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(
+                        onClick = {
+                            vm.cobrarNaMaquininha(comanda.id, metodo, valorCentavos) { uri ->
+                                CieloSmart.abrir(contexto, uri)
+                            }
+                            aoFechar()
+                        },
+                        enabled = podeReceber && pendenteMaquininha == null
+                    ) { Text("Cobrar na maquininha") }
+                    TextButton(
+                        onClick = {
+                            vm.receber(comanda.id, metodo, valorCentavos, null)
+                            aoFechar()
+                        },
+                        enabled = podeReceber
+                    ) { Text("Registrar sem maquininha (já cobrado)", fontSize = 12.sp) }
+                }
+            } else {
+                Button(
+                    onClick = {
+                        vm.receber(
+                            comanda.id, metodo, valorCentavos,
+                            if (metodo == MetodoPagamento.DINHEIRO) entregueCentavos else null
+                        )
+                        aoFechar()
+                    },
+                    enabled = podeReceber
+                ) { Text("Receber") }
+            }
         },
         dismissButton = { TextButton(onClick = aoFechar) { Text("Fechar") } }
     )

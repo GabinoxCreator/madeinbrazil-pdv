@@ -202,6 +202,12 @@ interface PdvDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun gravarValor(cv: ChaveValor)
 
+    @Query("SELECT valor FROM chave_valor WHERE chave = :chave")
+    fun valorAoVivo(chave: String): Flow<String?>
+
+    @Query("DELETE FROM chave_valor WHERE chave = :chave")
+    suspend fun apagarValor(chave: String)
+
     // ---------------- fila de impressao ----------------
 
     @Insert

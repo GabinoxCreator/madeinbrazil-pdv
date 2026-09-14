@@ -249,7 +249,7 @@ data class Pagamento(
     val trocoCentavos: Long = 0,
     val recebidoPor: String,
     val recebidoEm: Long,
-    // preenchidos pelo SDK da Cielo quando o pagamento no terminal existir
+    // preenchidos pela resposta da maquininha Cielo Smart (pagamento/CieloSmart.kt)
     val cieloNsu: String? = null,
     val cieloAutorizacao: String? = null,
     val cieloTransacaoId: String? = null,

@@ -9,6 +9,10 @@ import androidx.lifecycle.viewModelScope
 import br.com.madeinbrazilbar.pdv.BuildConfig
 import br.com.madeinbrazilbar.pdv.dados.*
 import br.com.madeinbrazilbar.pdv.impressao.FilaImpressao
+import br.com.madeinbrazilbar.pdv.pagamento.CieloSmart
+import br.com.madeinbrazilbar.pdv.pagamento.CredenciaisCielo
+import br.com.madeinbrazilbar.pdv.pagamento.PagamentoMaquininha
+import br.com.madeinbrazilbar.pdv.pagamento.PagamentoPendente
 import br.com.madeinbrazilbar.pdv.sincronia.ClienteServidor
 import br.com.madeinbrazilbar.pdv.sincronia.ClienteSupabase
 import br.com.madeinbrazilbar.pdv.sincronia.EstadoSincronia
@@ -153,6 +157,82 @@ class PdvViewModel(app: Application) : AndroidViewModel(app) {
 
     fun fecharCaixa(contadoCentavos: Long, observacao: String?) =
         rodar { caixa.fecharCaixa(contadoCentavos, _operador.value, observacao) }
+
+    // ------------------------------------------------- maquininha Cielo Smart
+
+    private val maquininha = PagamentoMaquininha(dao, caixa)
+
+    /** Só é true numa Cielo Smart com as credenciais preenchidas. Celular comum: false. */
+    val maquininhaDisponivel: Boolean = CieloSmart.maquininhaDisponivel(app)
+
+    /** Cobrança mandada pra maquininha que ainda não teve resposta. */
+    val pendenteMaquininha: StateFlow<PagamentoPendente?> = maquininha.pendenteAoVivo()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val _cobrandoNaMaquininha = MutableStateFlow(false)
+    /** True enquanto o app da Cielo está aberto: nessa hora o pendente é normal, não é aviso. */
+    val cobrandoNaMaquininha: StateFlow<Boolean> = _cobrandoNaMaquininha.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            try { maquininha.arrumarAoAbrir() } catch (e: CancellationException) { throw e } catch (e: Exception) { }
+        }
+    }
+
+    /**
+     * Grava o pendente e abre a Cielo. `abrir` recebe a URI e devolve false
+     * se não conseguiu abrir o app da maquininha.
+     */
+    fun cobrarNaMaquininha(comandaId: Long, metodo: String, valorCentavos: Long, abrir: (String) -> Boolean) {
+        viewModelScope.launch {
+            _ocupado.value = true
+            try {
+                when (val p = maquininha.preparar(
+                    comandaId, metodo, valorCentavos, _operador.value, CredenciaisCielo.doApp()
+                )) {
+                    is PagamentoMaquininha.Preparo.Erro -> _aviso.value = p.mensagem
+                    is PagamentoMaquininha.Preparo.Pronto -> {
+                        _cobrandoNaMaquininha.value = true
+                        if (!abrir(p.uri)) {
+                            _cobrandoNaMaquininha.value = false
+                            maquininha.descartar()
+                            _aviso.value = "Não consegui abrir o app da maquininha"
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _aviso.value = e.message ?: "Falha ao cobrar na maquininha"
+            } finally {
+                _ocupado.value = false
+            }
+        }
+    }
+
+    /** A Cielo abriu mibpdv://pagamento?response=... */
+    fun retornoDaMaquininha(uriCrua: String) {
+        viewModelScope.launch {
+            val r = try {
+                maquininha.processarRetorno(CieloSmart.lerRetorno(uriCrua))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                ResultadoOperacao.Erro(e.message ?: "Falha ao ler a resposta da maquininha")
+            }
+            _aviso.value = when (r) {
+                is ResultadoOperacao.Ok -> r.mensagem
+                is ResultadoOperacao.Erro -> r.mensagem
+            }
+            _cobrandoNaMaquininha.value = false
+        }
+    }
+
+    /** O app voltou pra frente sem resposta da Cielo: se ficou pendente, vira aviso. */
+    fun voltouDaMaquininha() { _cobrandoNaMaquininha.value = false }
+
+    fun registrarPendenteComoPago() = rodar { maquininha.registrarComoPago() }
+    fun descartarPendenteMaquininha() = rodar { maquininha.descartar() }
 
     suspend fun apuracao(contadoCentavos: Long? = null): Fechamento? = caixa.apuracao(contadoCentavos)
     suspend fun saldoDe(comandaId: Long): SaldoComanda? = caixa.saldo(comandaId)

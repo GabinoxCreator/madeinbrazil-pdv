@@ -6,6 +6,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+/** Códigos que a maquininha Cielo devolve de um pagamento aprovado. */
+data class DadosCielo(
+    /** id do payment na Cielo -> cielo_transaction_id */
+    val transacaoId: String?,
+    /** cieloCode ou paymentFields.nsu -> cielo_nsu */
+    val nsu: String?,
+    /** authCode -> cielo_authorization */
+    val autorizacao: String?
+)
+
 /**
  * Regras do caixa.
  *
@@ -95,19 +105,57 @@ class RepositorioCaixa(
     }
 
     /**
+     * Confere, SEM gravar nada, se dá pra receber esse valor agora. Usado antes
+     * de mandar a cobrança pra maquininha: não faz sentido o cliente pagar e o
+     * caixa recusar depois. As mesmas regras são repetidas em `receber`.
+     */
+    suspend fun conferirRecebimento(comandaId: Long, metodo: String, valorCentavos: Long): ResultadoOperacao {
+        dao.sessaoAbertaAgora()
+            ?: return ResultadoOperacao.Erro("Não há caixa aberto — abra o caixa antes de receber")
+        val comanda = dao.comandaAgora(comandaId)
+            ?: return ResultadoOperacao.Erro("Comanda não encontrada")
+        if (comanda.status == StatusComanda.CANCELADA) {
+            return ResultadoOperacao.Erro("Comanda cancelada não recebe pagamento")
+        }
+        if (metodo !in MetodoPagamento.TODOS) {
+            return ResultadoOperacao.Erro("Forma de pagamento inválida: $metodo")
+        }
+        if (valorCentavos <= 0) return ResultadoOperacao.Erro("Informe um valor maior que zero")
+        val saldo = saldo(comandaId)
+            ?: return ResultadoOperacao.Erro("Não consegui calcular a conta")
+        if (valorCentavos > saldo.faltaCentavos) {
+            return ResultadoOperacao.Erro(
+                "Falta apenas ${Dinheiro.comSimbolo(saldo.faltaCentavos)} nesta comanda"
+            )
+        }
+        return ResultadoOperacao.Ok("")
+    }
+
+    /**
      * Registra um recebimento. Aceita parcial: se sobrar saldo, a comanda
      * continua fechada aguardando o resto; ao quitar, vira 'recebida'.
      *
      * @param valorCentavos quanto abate da conta (e quanto entra na gaveta)
      * @param recebidoCentavos quanto o cliente entregou em dinheiro (para o troco)
+     * @param uuid id fixo do pagamento (a maquininha usa a `reference` da Cielo):
+     *   se já existir pagamento com esse uuid, não registra de novo
+     * @param cielo códigos da maquininha, quando o pagamento passou por ela
+     * @param naMesmaTransacao gravação extra que precisa acontecer junto (ex.: apagar o pendente da maquininha)
      */
     suspend fun receber(
         comandaId: Long,
         metodo: String,
         valorCentavos: Long,
         recebidoCentavos: Long?,
-        operador: String
+        operador: String,
+        uuid: String? = null,
+        cielo: DadosCielo? = null,
+        naMesmaTransacao: suspend () -> Unit = {}
     ): ResultadoOperacao {
+        if (uuid != null && dao.pagamentoPorUuid(uuid) != null) {
+            return ResultadoOperacao.Ok("Pagamento já registrado")
+        }
+
         val sessao = dao.sessaoAbertaAgora()
             ?: return ResultadoOperacao.Erro("Não há caixa aberto — abra o caixa antes de receber")
 
@@ -144,8 +192,11 @@ class RepositorioCaixa(
         val pagamento = Pagamento(
             comandaId = comandaId, sessaoId = sessao.id, metodo = metodo,
             valorCentavos = valorCentavos, trocoCentavos = troco,
-            recebidoPor = operador, recebidoEm = agora
-        )
+            recebidoPor = operador, recebidoEm = agora,
+            cieloNsu = cielo?.nsu,
+            cieloAutorizacao = cielo?.autorizacao,
+            cieloTransacaoId = cielo?.transacaoId
+        ).let { if (uuid != null) it.copy(uuid = uuid) else it }
         val novoSaldo = saldo.copy(pagoCentavos = saldo.pagoCentavos + valorCentavos)
         val comandaAtualizada = if (novoSaldo.quitada) {
             comanda.copy(
@@ -161,6 +212,7 @@ class RepositorioCaixa(
         transacao {
             dao.inserirPagamento(pagamento)
             dao.atualizarComanda(comandaAtualizada)
+            naMesmaTransacao()
             sincronia?.let { s ->
                 s.inserir(Mapeamento.PAGAMENTOS, pagamento.uuid, Mapeamento.pagamento(pagamento, comanda.uuid, sessao.uuid))
                 val campos = if (novoSaldo.quitada) {

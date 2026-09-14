@@ -80,6 +80,8 @@ fun TelaComanda(vm: PdvViewModel, comandaId: Long, aoVoltar: () -> Unit) {
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (ocupado) LinearProgressIndicator(Modifier.fillMaxWidth())
 
+            AvisoMaquininhaPendente(vm)
+
             if (!aberta) {
                 Surface(color = MaterialTheme.colorScheme.errorContainer) {
                     Text(

@@ -32,6 +32,15 @@ android {
 
         buildConfigField("String", "SERVIDOR_URL", credencial("servidor.url"))
         buildConfigField("String", "SERVIDOR_CHAVE_PUBLICA", credencial("servidor.chave_publica"))
+
+        // Maquininha Cielo Smart (pagamento por Deep Link). O Gabriel precisa
+        // preencher em credenciais.properties as chaves cielo.client_id,
+        // cielo.access_token e cielo.merchant_code (este último é opcional).
+        // Sem client_id ou access_token o app não oferece "Cobrar na maquininha"
+        // e o recebimento funciona como antes (registro manual).
+        buildConfigField("String", "CIELO_CLIENT_ID", credencial("cielo.client_id"))
+        buildConfigField("String", "CIELO_ACCESS_TOKEN", credencial("cielo.access_token"))
+        buildConfigField("String", "CIELO_MERCHANT_CODE", credencial("cielo.merchant_code"))
     }
 
     buildTypes {
