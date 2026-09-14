@@ -14,3 +14,6 @@ credenciais.properties
 *.keystore
 *.jks
 .env
+
+# acesso ao painel web - nunca versionar
+painel-credenciais.txt
