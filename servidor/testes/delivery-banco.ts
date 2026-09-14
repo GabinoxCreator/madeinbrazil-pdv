@@ -58,6 +58,8 @@ await db.exec(`
   INSERT INTO public.pdv_panel_users (user_id, display_name, role) VALUES ('${PAINEL}', 'Caixa Teste', 'caixa');
   INSERT INTO public.pdv_terminal_accounts (user_id, terminal_id) SELECT '${TERMINAL}', id FROM public.pdv_terminals LIMIT 1;
   UPDATE public.dlv_settings SET value = 'aberta' WHERE key = 'store_mode';
+  -- a bateria cria dezenas de pedidos em segundos: limite geral alto aqui, testado na seção 12
+  UPDATE public.dlv_settings SET value = '1000' WHERE key = 'max_orders_per_window';
 `);
 
 const perto = { lat: -20.8200, lng: -49.3752 };  // ~0,6 km
@@ -275,6 +277,18 @@ await ok("mudança sem diferença não gera registro", async () => {
   await como("authenticated", PAINEL, () => sql("select dlv_ajustar_item($1, null, true, 350, 'Caixa')", [agua.id]));
   return sql("select count(*)::int n from dlv_menu_changes where target_id = $1", [agua.id]);
 }, (r: any[]) => r[0].n === 2 || JSON.stringify(r));
+
+// ---------------------------------------------------------------- 12. limite geral contra pedido falso em massa
+console.log("\n— Limite geral");
+await como("authenticated", PAINEL, () => sql("select dlv_ajustar_opcao($1, false, null, null, 'Caixa')", [opcao(frango, "Escolhe seu Filé de Frango", "Empanado").id]));
+const recentes = await um("select count(*)::int from dlv_orders where source = 'cardapio' and created_at > now() - interval '5 minutes'");
+await sql("UPDATE dlv_settings SET value = $1 WHERE key = 'max_orders_per_window'", [String(recentes + 1)]);
+await ok("dentro do limite: pedido passa", () => criar(pedido({ cliente: { nome: "Limite Um", telefone: "17922220001" } })), (r: any) => !!r.numero || JSON.stringify(r));
+await recusa("passou do limite na janela: pedido do cardápio é recusado", () => criar(pedido({ cliente: { nome: "Limite Dois", telefone: "17922220002" } })), "muitos pedidos");
+await ok("pedido pelo painel não entra no limite", () => como("authenticated", PAINEL, () => um("select dlv_criar_pedido_painel($1, 'Caixa')", [JSON.stringify({
+  modo: "retirada", cliente: { nome: "Balcão Limite", telefone: "17922220003" }, pagamento: { forma: "dinheiro" }, itens: [linhaFrango()] })])),
+  (r: any) => !!r.numero || JSON.stringify(r));
+await sql("UPDATE dlv_settings SET value = '1000' WHERE key = 'max_orders_per_window'");
 
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
