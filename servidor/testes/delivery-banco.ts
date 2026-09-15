@@ -258,8 +258,10 @@ await ok("preço de cada tamanho do 'Bife a Cavalo' = do Bife + 2,00 (Especiais 
     join dlv_item_sizes so on so.item_id = o.id and so.name = sn.name
    where n.name = 'Bife a Cavalo' and n.is_active order by c.name, sn.sort_order`),
   (r: any[]) => r.length === 6 && r.every((x) => x.novo === x.velho + 200) && r.map((x) => x.short_name + x.novo).join() === "P2690,M2990,G3290,P2390,M2790,G3190" || JSON.stringify(r));
-await ok("prato novo copia foto, descrição, ponto, dias, pausado; anota_id vazio; tamanhos copiam descrição", () => sql(`
-  select n.name, n.image_url = o.image_url foto, n.description = o.description descr, n.production_point_id = o.production_point_id ponto,
+await ok("prato novo copia ponto, dias, pausado; anota_id vazio; tamanhos copiam descrição; descrição e foto próprias (dlv_descricoes_e_fotos)", () => sql(`
+  select n.name, n.image_url like '/fotos-pratos/file-frango-%' foto,
+         n.description not ilike '% ou %' and n.description ilike '%' || lower(split_part(n.name, ' ', 4)) || '%' descr,
+         n.production_point_id = o.production_point_id ponto,
          n.weekdays is not distinct from o.weekdays dias, n.is_paused = o.is_paused pausado, n.anota_id is null sem_anota,
          (select string_agg(coalesce(s.description, '-'), '|' order by s.sort_order) from dlv_item_sizes s where s.item_id = n.id)
            = (select string_agg(coalesce(s.description, '-'), '|' order by s.sort_order) from dlv_item_sizes s where s.item_id = o.id) descr_tam
@@ -663,16 +665,16 @@ await ok("painel muda nome, descrição, categoria, dias e foto", () => editar("
   semMudar({ 1: "  Tilápia Grelhada  ", 2: "Tilápia na chapa com arroz e feijão.", 3: catCarne, 4: "{5,1,1}", 6: "https://exemplo.com.br/fotos/tilapia.jpg" })),
   (r: any) => r.nome === "Tilápia Grelhada" && r.categoria_id === catCarne && JSON.stringify(r.dias) === "[1,5]" && r.imagem_url === "https://exemplo.com.br/fotos/tilapia.jpg" || JSON.stringify(r));
 await ok("histórico registra cada campo alterado, com antes e depois", () => sql(
-  "select field, old_value, new_value, by_name, target, target_name from dlv_menu_changes where target_id = $1 order by field", [tilapiaG.id]),
+  "select field, old_value, new_value, by_name, target, target_name from dlv_menu_changes where target_id = $1 and by_name = 'Gerente' order by field", [tilapiaG.id]),
   (r: any[]) => r.length === 5 && r.every((x) => x.by_name === "Gerente" && x.target === "item" && x.target_name === "Tilápia Grelhada")
     && r.some((x) => x.field === "nome" && x.old_value === "Filé de Tilápia Grelhado" && x.new_value === "Tilápia Grelhada")
     && r.some((x) => x.field === "descrição" && x.old_value.startsWith("Acompanha arroz") && x.new_value === "Tilápia na chapa com arroz e feijão.")
     && r.some((x) => x.field === "categoria" && x.old_value === "Especiais de Peixe" && x.new_value === "Especiais de Carne")
     && r.some((x) => x.field === "dias" && x.old_value === "todos os dias" && x.new_value === "seg, sex")
-    && r.some((x) => x.field === "foto" && x.old_value.includes("anota.ai") && x.new_value.endsWith("tilapia.jpg")) || JSON.stringify(r));
+    && r.some((x) => x.field === "foto" && x.old_value === "/fotos-pratos/tilapia-grelhada.jpg" && x.new_value.endsWith("tilapia.jpg")) || JSON.stringify(r));
 await ok("tudo NULL não muda nada nem registra histórico", async () => {
   await editar("authenticated", PAINEL, semMudar({}));
-  return sql("select (select count(*)::int from dlv_menu_changes where target_id = $1) n, (select row(name, category_id, weekdays)::text from dlv_items where id = $1) item", [tilapiaG.id]);
+  return sql("select (select count(*)::int from dlv_menu_changes where target_id = $1 and by_name = 'Gerente') n, (select row(name, category_id, weekdays)::text from dlv_items where id = $1) item", [tilapiaG.id]);
 }, (r: any[]) => r[0].n === 5 && r[0].item.includes("Tilápia Grelhada") && r[0].item.includes("{1,5}") || JSON.stringify(r));
 const tilV = await ok("p_mudar_dias com dias NULL = todos os dias; foto com caminho '/'; prato aparece na categoria nova", async () => {
   await editar("authenticated", PAINEL, semMudar({ 5: true, 6: "/fotos/tilapia.webp" }));
@@ -702,7 +704,7 @@ await recusa("foto com barra invertida", () => editar("authenticated", PAINEL, s
 await recusa("foto com javascript:", () => editar("authenticated", PAINEL, semMudar({ 6: "javascript:alert(1)" })), "foto inválido");
 await recusa("prato inativo (original das variações) não é editado", () => editar("authenticated", PAINEL, semMudar({ 0: frango0.id, 1: "Volta" })), "Item não encontrado");
 await recusa("sem operador", () => editar("authenticated", PAINEL, semMudar({ 1: "Outro", 7: " " })), "Informe quem está operando");
-await ok("recusas não gravaram nada", () => sql("select name, image_url, (select count(*)::int from dlv_menu_changes where target_id = $1) n from dlv_items where id = $1", [tilapiaG.id]),
+await ok("recusas não gravaram nada", () => sql("select name, image_url, (select count(*)::int from dlv_menu_changes where target_id = $1 and by_name = 'Gerente') n from dlv_items where id = $1", [tilapiaG.id]),
   (r: any[]) => r[0].name === "Tilápia Grelhada" && r[0].image_url === "/fotos/tilapia.webp" && r[0].n === 8 || JSON.stringify(r));
 
 // ---------------------------------------------------------------- 16. horários de funcionamento (migration dlv_edicao_painel)
