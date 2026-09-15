@@ -42,6 +42,15 @@ await db.exec(`
   CREATE TABLE auth.users (id uuid PRIMARY KEY, email text);
   CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
   GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, service_role;
+  -- Storage mínimo (só as colunas que as políticas do dlv-fotos usam), com RLS ligado como no Supabase.
+  -- O dlv-fotos já existe com configuração errada para provar o ON CONFLICT DO UPDATE.
+  CREATE SCHEMA storage; GRANT USAGE ON SCHEMA storage TO anon, authenticated, service_role;
+  CREATE TABLE storage.buckets (id text PRIMARY KEY, name text NOT NULL, public boolean NOT NULL DEFAULT false, file_size_limit bigint, allowed_mime_types text[]);
+  CREATE TABLE storage.objects (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id text REFERENCES storage.buckets(id), name text NOT NULL, owner uuid);
+  ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO anon, authenticated, service_role;
+  GRANT SELECT ON storage.buckets TO anon, authenticated, service_role;
+  INSERT INTO storage.buckets (id, name, public) VALUES ('dlv-fotos', 'dlv-fotos', false), ('outro', 'outro', false);
 `);
 
 // Três fases, igual ao servidor real: (1) tudo ANTES da migration de tamanhos, cria pedidos com os
@@ -639,6 +648,133 @@ const cavaloV = pratoDe(menuV, "Especiais de Carne", "Bife a Cavalo");
 await ok("pedido 'Bife a Cavalo (Pequena)': 26,90 = Bife 24,90 + 2,00", () => criar(pedidoT("17890000003", [
   linhaT(cavaloV, tam(cavaloV, "Pequena"), [["Escolha o Acompanhamento", "Farofa"]])])),
   (r: any) => r.subtotal_cents === 2690 || JSON.stringify(r));
+
+// ---------------------------------------------------------------- 15. editar prato (migration dlv_edicao_painel)
+console.log("\n— Editar prato pelo painel");
+const tilapiaG = pratoDe(menuV, "Especiais de Peixe", "Filé de Tilápia Grelhado");
+const catCarne = menuV.categorias.find((c: any) => c.nome === "Especiais de Carne").id;
+const editar = (papel: "anon" | "authenticated", sub: string | null, args: any[]) =>
+  como(papel, sub, () => um("select dlv_editar_item($1, $2, $3, $4, $5, $6, $7, $8)", args));
+const semMudar = (extra: Record<number, any>) => { const a: any[] = [tilapiaG.id, null, null, null, null, null, null, "Gerente"]; for (const k in extra) a[k] = extra[k]; return a; };
+
+await recusa("anônimo não edita prato", () => editar("anon", null, semMudar({ 1: "X" })), "permission denied");
+await recusa("logado sem painel não edita prato", () => editar("authenticated", ESTRANHO, semMudar({ 1: "X" })), "Sem permissão");
+await ok("painel muda nome, descrição, categoria, dias e foto", () => editar("authenticated", PAINEL,
+  semMudar({ 1: "  Tilápia Grelhada  ", 2: "Tilápia na chapa com arroz e feijão.", 3: catCarne, 4: "{5,1,1}", 6: "https://exemplo.com.br/fotos/tilapia.jpg" })),
+  (r: any) => r.nome === "Tilápia Grelhada" && r.categoria_id === catCarne && JSON.stringify(r.dias) === "[1,5]" && r.imagem_url === "https://exemplo.com.br/fotos/tilapia.jpg" || JSON.stringify(r));
+await ok("histórico registra cada campo alterado, com antes e depois", () => sql(
+  "select field, old_value, new_value, by_name, target, target_name from dlv_menu_changes where target_id = $1 order by field", [tilapiaG.id]),
+  (r: any[]) => r.length === 5 && r.every((x) => x.by_name === "Gerente" && x.target === "item" && x.target_name === "Tilápia Grelhada")
+    && r.some((x) => x.field === "nome" && x.old_value === "Filé de Tilápia Grelhado" && x.new_value === "Tilápia Grelhada")
+    && r.some((x) => x.field === "descrição" && x.old_value.startsWith("Acompanha arroz") && x.new_value === "Tilápia na chapa com arroz e feijão.")
+    && r.some((x) => x.field === "categoria" && x.old_value === "Especiais de Peixe" && x.new_value === "Especiais de Carne")
+    && r.some((x) => x.field === "dias" && x.old_value === "todos os dias" && x.new_value === "seg, sex")
+    && r.some((x) => x.field === "foto" && x.old_value.includes("anota.ai") && x.new_value.endsWith("tilapia.jpg")) || JSON.stringify(r));
+await ok("tudo NULL não muda nada nem registra histórico", async () => {
+  await editar("authenticated", PAINEL, semMudar({}));
+  return sql("select (select count(*)::int from dlv_menu_changes where target_id = $1) n, (select row(name, category_id, weekdays)::text from dlv_items where id = $1) item", [tilapiaG.id]);
+}, (r: any[]) => r[0].n === 5 && r[0].item.includes("Tilápia Grelhada") && r[0].item.includes("{1,5}") || JSON.stringify(r));
+const tilV = await ok("p_mudar_dias com dias NULL = todos os dias; foto com caminho '/'; prato aparece na categoria nova", async () => {
+  await editar("authenticated", PAINEL, semMudar({ 5: true, 6: "/fotos/tilapia.webp" }));
+  const i = pratoDe(await como("anon", null, () => um("select dlv_cardapio_publico()")), "Especiais de Carne", "Tilápia Grelhada");
+  const dias = await um("select new_value from dlv_menu_changes where target_id = $1 and field = 'dias' order by created_at desc limit 1", [tilapiaG.id]);
+  return { i, dias };
+}, (x: any) => x.i?.imagem === "/fotos/tilapia.webp" && x.i.descricao === "Tilápia na chapa com arroz e feijão." && x.i.tamanhos.length === 3
+  && !pratoDe(menuV, "Especiais de Carne", "Tilápia Grelhada") && x.dias === "todos os dias" || JSON.stringify(x).slice(0, 300));
+await ok("pedido do prato editado sai com o nome novo", async () => {
+  const r = await criar(pedidoT("17890000005", [linhaT(tilV.i, tam(tilV.i, "Pequena"), [["Escolha o Acompanhamento", "Macarrão"]])]));
+  return sql("select o.subtotal_cents, oi.item_name from dlv_orders o join dlv_order_items oi on oi.order_id = o.id where o.id = $1", [r.pedido_id]);
+}, (r: any[]) => r[0].subtotal_cents === 2590 && r[0].item_name === "Tilápia Grelhada (Pequena)" || JSON.stringify(r));
+await ok("descrição em branco tira a descrição", async () => {
+  await editar("authenticated", PAINEL, semMudar({ 2: "   " }));
+  return sql("select description from dlv_items where id = $1", [tilapiaG.id]);
+}, (r: any[]) => r[0].description === null || JSON.stringify(r));
+const catInativa = await um("insert into dlv_categories (name, is_active) values ('Categoria Antiga', false) returning id");
+await recusa("nome vazio", () => editar("authenticated", PAINEL, semMudar({ 1: "   " })), "não pode ficar vazio");
+await recusa("nome com mais de 80 caracteres", () => editar("authenticated", PAINEL, semMudar({ 1: "x".repeat(81) })), "Nome muito longo");
+await recusa("descrição com mais de 500 caracteres", () => editar("authenticated", PAINEL, semMudar({ 2: "x".repeat(501) })), "Descrição muito longa");
+await recusa("categoria que não existe", () => editar("authenticated", PAINEL, semMudar({ 3: "00000000-0000-0000-0000-000000000001" })), "Categoria não encontrada");
+await recusa("categoria inativa", () => editar("authenticated", PAINEL, semMudar({ 3: catInativa })), "Categoria não encontrada");
+await recusa("dia fora de 0 a 6", () => editar("authenticated", PAINEL, semMudar({ 4: "{1,7}" })), "Dias da semana");
+await recusa("foto com http://", () => editar("authenticated", PAINEL, semMudar({ 6: "http://exemplo.com/x.jpg" })), "foto inválido");
+await recusa("foto com //outro-site", () => editar("authenticated", PAINEL, semMudar({ 6: "//evil.com/x.jpg" })), "foto inválido");
+await recusa("foto com barra invertida", () => editar("authenticated", PAINEL, semMudar({ 6: "/\\evil.com/x.jpg" })), "foto inválido");
+await recusa("foto com javascript:", () => editar("authenticated", PAINEL, semMudar({ 6: "javascript:alert(1)" })), "foto inválido");
+await recusa("prato inativo (original das variações) não é editado", () => editar("authenticated", PAINEL, semMudar({ 0: frango0.id, 1: "Volta" })), "Item não encontrado");
+await recusa("sem operador", () => editar("authenticated", PAINEL, semMudar({ 1: "Outro", 7: " " })), "Informe quem está operando");
+await ok("recusas não gravaram nada", () => sql("select name, image_url, (select count(*)::int from dlv_menu_changes where target_id = $1) n from dlv_items where id = $1", [tilapiaG.id]),
+  (r: any[]) => r[0].name === "Tilápia Grelhada" && r[0].image_url === "/fotos/tilapia.webp" && r[0].n === 8 || JSON.stringify(r));
+
+// ---------------------------------------------------------------- 16. horários de funcionamento (migration dlv_edicao_painel)
+console.log("\n— Horários de funcionamento");
+const salvar = (papel: "anon" | "authenticated", sub: string | null, h: any) =>
+  como(papel, sub, () => um("select dlv_salvar_horarios($1, 'Gerente')", [JSON.stringify(h)]));
+const horariosTabela = async () => (await sql("select weekday, to_char(opens_at, 'HH24:MI') a, to_char(closes_at, 'HH24:MI') f from dlv_opening_hours order by 1, 2"))
+  .map((x: any) => `${x.weekday} ${x.a}-${x.f}`).join("; ");
+
+await recusa("anônimo não salva horários", () => salvar("anon", null, []), "permission denied");
+await recusa("logado sem painel não salva horários", () => salvar("authenticated", ESTRANHO, []), "Sem permissão");
+await ok("painel salva: duas faixas na segunda, faixas encostadas na sexta", () => salvar("authenticated", PAINEL, [
+  { dia: 5, abre: "15:00", fecha: "16:30" }, { dia: 1, abre: "18:00", fecha: "22:00" }, { dia: 1, abre: "10:00", fecha: "14:00" }, { dia: 5, abre: "11:00", fecha: "15:00" }]),
+  (r: any) => r.horarios.map((h: any) => `${h.dia} ${h.abre}-${h.fecha}`).join("; ") === "1 10:00-14:00; 1 18:00-22:00; 5 11:00-15:00; 5 15:00-16:30" || JSON.stringify(r));
+await ok("tabela substituída por inteiro (o horário antigo de hoje sumiu)", () => horariosTabela(), (s: string) => s === "1 10:00-14:00; 1 18:00-22:00; 5 11:00-15:00; 5 15:00-16:30" || s);
+await ok("histórico guarda o resumo antes e depois", () => sql("select old_value, new_value, by_name, target from dlv_menu_changes where field = 'horários' order by created_at"),
+  (r: any[]) => r.length === 1 && r[0].target === "loja" && r[0].old_value.includes("00:00-23:59")
+    && r[0].new_value === "seg 10:00-14:00; seg 18:00-22:00; sex 11:00-15:00; sex 15:00-16:30" && r[0].by_name === "Gerente" || JSON.stringify(r));
+await recusa("faixas sobrepostas no mesmo dia", () => salvar("authenticated", PAINEL, [{ dia: 2, abre: "10:00", fecha: "14:00" }, { dia: 2, abre: "13:00", fecha: "15:00" }]), "se sobrepõem");
+await recusa("faixa dentro de outra", () => salvar("authenticated", PAINEL, [{ dia: 3, abre: "10:00", fecha: "20:00" }, { dia: 3, abre: "12:00", fecha: "13:00" }]), "se sobrepõem");
+await recusa("fecha igual a abre", () => salvar("authenticated", PAINEL, [{ dia: 2, abre: "14:00", fecha: "14:00" }]), "precisa ser depois");
+await recusa("fecha antes de abre", () => salvar("authenticated", PAINEL, [{ dia: 2, abre: "15:00", fecha: "10:00" }]), "precisa ser depois");
+await recusa("mais de 3 faixas no mesmo dia", () => salvar("authenticated", PAINEL, [
+  { dia: 4, abre: "08:00", fecha: "09:00" }, { dia: 4, abre: "09:00", fecha: "10:00" }, { dia: 4, abre: "10:00", fecha: "11:00" }, { dia: 4, abre: "11:00", fecha: "12:00" }]), "no máximo 3");
+await recusa("hora sem zero à esquerda", () => salvar("authenticated", PAINEL, [{ dia: 1, abre: "9:00", fecha: "14:00" }]), "Horário inválido");
+await recusa("dia 7", () => salvar("authenticated", PAINEL, [{ dia: 7, abre: "09:00", fecha: "14:00" }]), "Horário inválido");
+await recusa("dia como texto", () => salvar("authenticated", PAINEL, [{ dia: "1", abre: "09:00", fecha: "14:00" }]), "Horário inválido");
+await recusa("24:00 não existe", () => salvar("authenticated", PAINEL, [{ dia: 1, abre: "09:00", fecha: "24:00" }]), "Horário inválido");
+await recusa("não é lista", () => salvar("authenticated", PAINEL, { dia: 1 }), "lista");
+await ok("recusas não mexeram nos horários nem no histórico", async () => ({
+  t: await horariosTabela(), n: await um("select count(*)::int from dlv_menu_changes where field = 'horários'") }),
+  (x: any) => x.t === "1 10:00-14:00; 1 18:00-22:00; 5 11:00-15:00; 5 15:00-16:30" && x.n === 1 || JSON.stringify(x));
+await ok("lista vazia: sem horários, e no modo automático a loja fica fechada", async () => {
+  const r = await salvar("authenticated", PAINEL, []);
+  const loja = await como("authenticated", PAINEL, () => um("select dlv_configurar_loja('auto', null, 'Gerente')"));
+  const hist = await um("select new_value from dlv_menu_changes where field = 'horários' order by created_at desc limit 1");
+  await como("authenticated", PAINEL, () => um("select dlv_configurar_loja('aberta', null, 'Gerente')"));
+  return { h: r.horarios.length, linhas: await um("select count(*)::int from dlv_opening_hours"), aberta: loja.aberta, hist };
+}, (x: any) => x.h === 0 && x.linhas === 0 && x.aberta === false && x.hist === "nenhum horário" || JSON.stringify(x));
+
+// ---------------------------------------------------------------- 17. Storage das fotos (migration dlv_edicao_painel)
+console.log("\n— Storage das fotos (dlv-fotos)");
+await ok("bucket dlv-fotos (já existia) ficou público, 2 MB, só jpeg/png/webp", () => sql(
+  "select public, file_size_limit::int lim, array_to_string(allowed_mime_types, ',') mimes from storage.buckets where id = 'dlv-fotos'"),
+  (r: any[]) => r[0].public === true && r[0].lim === 2097152 && r[0].mimes === "image/jpeg,image/png,image/webp" || JSON.stringify(r));
+await ok("4 políticas em storage.objects, todas com bucket_id = 'dlv-fotos'", () => sql(
+  "select policyname, cmd, roles::text roles, coalesce(qual, '') q, coalesce(with_check, '') w from pg_policies where schemaname = 'storage' and tablename = 'objects' order by policyname"),
+  (r: any[]) => r.length === 4 && r.every((x) => (x.q === "" || x.q.includes("'dlv-fotos'")) && (x.w === "" || x.w.includes("'dlv-fotos'")))
+    && r.filter((x) => x.cmd !== "SELECT").every((x) => x.roles === "{authenticated}" && (x.q + x.w).includes("pdv_is_panel_user()")) || JSON.stringify(r));
+const novaFoto = (bucket: string, nome: string) => sql("insert into storage.objects (bucket_id, name) values ($1, $2) returning id", [bucket, nome]);
+await recusa("anônimo não envia foto", () => como("anon", null, () => novaFoto("dlv-fotos", "anon.jpg")), "row-level security");
+await recusa("logado sem painel não envia foto", () => como("authenticated", ESTRANHO, () => novaFoto("dlv-fotos", "estranho.jpg")), "row-level security");
+await ok("usuário do painel envia foto", () => como("authenticated", PAINEL, () => novaFoto("dlv-fotos", "pratos/bife.jpg")), (r: any[]) => r.length === 1);
+await recusa("usuário do painel não envia em outro bucket", () => como("authenticated", PAINEL, () => novaFoto("outro", "x.jpg")), "row-level security");
+await um("insert into storage.objects (bucket_id, name) values ('outro', 'segredo.txt') returning id");
+await ok("anônimo lê a foto do dlv-fotos, mas não vê objeto de outro bucket", () => como("anon", null, () => sql("select bucket_id, name from storage.objects order by name")),
+  (r: any[]) => r.length === 1 && r[0].name === "pratos/bife.jpg" || JSON.stringify(r));
+const fotosNoBucket = () => um("select count(*)::int from storage.objects where bucket_id = 'dlv-fotos'");
+await ok("anônimo não apaga foto (nenhuma linha afetada)", async () => ({
+  apagou: (await como("anon", null, () => sql("delete from storage.objects where bucket_id = 'dlv-fotos' returning id"))).length, sobrou: await fotosNoBucket() }),
+  (x: any) => x.apagou === 0 && x.sobrou === 1 || JSON.stringify(x));
+await ok("logado sem painel não apaga nem troca foto", async () => ({
+  apagou: (await como("authenticated", ESTRANHO, () => sql("delete from storage.objects where bucket_id = 'dlv-fotos' returning id"))).length,
+  trocou: (await como("authenticated", ESTRANHO, () => sql("update storage.objects set name = 'hack.jpg' where bucket_id = 'dlv-fotos' returning id"))).length,
+  nome: await um("select name from storage.objects where bucket_id = 'dlv-fotos'") }),
+  (x: any) => x.apagou === 0 && x.trocou === 0 && x.nome === "pratos/bife.jpg" || JSON.stringify(x));
+await recusa("usuário do painel não move foto para outro bucket", () => como("authenticated", PAINEL, () => sql("update storage.objects set bucket_id = 'outro' where bucket_id = 'dlv-fotos'")), "row-level security");
+await ok("usuário do painel troca e apaga foto do dlv-fotos, sem tocar em outro bucket", async () => ({
+  trocou: (await como("authenticated", PAINEL, () => sql("update storage.objects set name = 'pratos/bife-2.jpg' where bucket_id = 'dlv-fotos' returning id"))).length,
+  apagou: (await como("authenticated", PAINEL, () => sql("delete from storage.objects returning bucket_id"))).map((x: any) => x.bucket_id).join(),
+  outro: await um("select count(*)::int from storage.objects where bucket_id = 'outro'") }),
+  (x: any) => x.trocou === 1 && x.apagou === "dlv-fotos" && x.outro === 1 || JSON.stringify(x));
 
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
