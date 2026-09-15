@@ -473,5 +473,22 @@ await ok("todos os tamanhos pausados: o prato some do cardápio", async () => {
   return pratoDe(await como("anon", null, () => um("select dlv_cardapio_publico()")), "Especiais de Frango", "Filé de Frango");
 }, (i: any) => i === undefined || JSON.stringify(i).slice(0, 200));
 
+// ---------------------------------------------------------------- situação da loja, leitura leve (migration dlv_status_loja)
+console.log("\n— Situação da loja (leitura leve)");
+await ok("anônimo lê a situação da loja sem baixar o cardápio", () => como("anon", null, () => um("select dlv_status_loja()")),
+  (r: any) => typeof r.aberta === "boolean" && typeof r.modo === "string" && Array.isArray(r.horarios) && !("categorias" in r) || JSON.stringify(r));
+await ok("situação bate com a do cardápio público", async () => {
+  const s = await como("anon", null, () => um("select dlv_status_loja()"));
+  const m = await como("anon", null, () => um("select dlv_cardapio_publico()"));
+  return s.aberta === m.loja.aberta;
+});
+await ok("loja forçada fechada aparece fechada", async () => {
+  const antes = await um("select value from dlv_settings where key = 'store_mode'");
+  await sql("UPDATE dlv_settings SET value = 'fechada' WHERE key = 'store_mode'");
+  const r = await como("anon", null, () => um("select dlv_status_loja()"));
+  await sql("UPDATE dlv_settings SET value = $1 WHERE key = 'store_mode'", [antes]);
+  return r;
+}, (r: any) => r.aberta === false && r.modo === "fechada" || JSON.stringify(r));
+
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
