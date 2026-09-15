@@ -66,6 +66,8 @@ data class PedidoDelivery(
     val endereco: EnderecoDelivery?,
     val pagamento: String?,
     val pago: Boolean,
+    /** Pagamento "online" (Mercado Pago): 'pix' ou 'credit_card'. Null nos outros. */
+    val tipoPagamentoOnline: String?,
     val trocoParaCentavos: Long?,
     val subtotalCentavos: Long,
     val taxaEntregaCentavos: Long,
@@ -98,6 +100,7 @@ data class PedidoDelivery(
             },
             pagamento = j.texto("pagamento"),
             pago = j.logico("pago") ?: false,
+            tipoPagamentoOnline = j.texto("mp_payment_type"),
             trocoParaCentavos = j.inteiro("troco_para_cents"),
             subtotalCentavos = j.inteiro("subtotal_cents") ?: 0,
             taxaEntregaCentavos = j.inteiro("taxa_entrega_cents") ?: 0,

@@ -21,6 +21,7 @@ object ExemplosDelivery {
         modo: String = "entrega",
         pagamento: String = "dinheiro",
         pago: Boolean = false,
+        tipoOnline: String? = null,
         trocoPara: Long? = 10_000,
         comEndereco: Boolean = true,
         motivo: String? = null
@@ -44,6 +45,7 @@ object ExemplosDelivery {
             } else put("endereco", JsonNull)
             put("pagamento", pagamento)
             put("pago", pago)
+            if (tipoOnline != null) put("mp_payment_type", tipoOnline)
             if (trocoPara != null) put("troco_para_cents", trocoPara) else put("troco_para_cents", JsonNull)
             put("subtotal_cents", 8_980)
             put("taxa_entrega_cents", 700)

@@ -238,15 +238,24 @@ object Cupons {
 
     private fun modo(p: PedidoDelivery) = if (p.entrega) "ENTREGA" else "RETIRADA"
 
-    private fun rotuloPagamento(forma: String?) = when (forma) {
+    private fun rotuloPagamento(p: PedidoDelivery) = when (p.pagamento) {
+        // pago antes de ir pra produção (Checkout Pro do Mercado Pago)
+        "online" -> when (p.tipoPagamentoOnline) {
+            "pix" -> "Pago online (Pix)"
+            "credit_card" -> "Pago online (cartão)"
+            else -> "Pago online"
+        }
         "pix_online" -> "Pix online"
         "pix_entrega" -> "Pix na entrega"
         "dinheiro" -> "Dinheiro"
         "credito" -> "Crédito"
         "debito" -> "Débito"
         null -> "-"
-        else -> forma
+        else -> p.pagamento
     }
+
+    /** Formas em que o cliente paga ANTES: o motoboy não pode cobrar de novo. */
+    private fun pagoAntes(p: PedidoDelivery) = p.pagamento == "online" || p.pagamento == "pix_online"
 
     /** Complementos indentados embaixo do item, e a observação do item. */
     private fun EscPos.detalhesDoItem(item: ItemDelivery) {
@@ -341,9 +350,14 @@ object Cupons {
             dobrado(false)
             negrito(false)
 
-            colunas("Pagamento", rotuloPagamento(p.pagamento))
-            if (p.pago) {
-                centralizado().dobrado(true).negrito(true).linha("PAGO").dobrado(false).negrito(false).aEsquerda()
+            colunas("Pagamento", rotuloPagamento(p))
+            when {
+                // cliente já pagou: aviso grande pro motoboy não cobrar de novo
+                p.pago -> centralizado().dobrado(true).negrito(true)
+                    .linha("PAGO - NÃO COBRAR").dobrado(false).negrito(false).aEsquerda()
+                // era pra ter pago antes e o servidor não confirmou: não afirmar nada
+                pagoAntes(p) -> centralizado().dobrado(true).negrito(true)
+                    .linha("CONFERIR PAGAMENTO").dobrado(false).negrito(false).aEsquerda()
             }
             p.trocoParaCentavos?.takeIf { it > 0 }?.let {
                 centralizado().dobrado(true).negrito(true)

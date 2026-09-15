@@ -66,7 +66,8 @@ class CuponsDeliveryTest {
             "Pagamento", "Dinheiro", "TROCO PARA R$ 100,00", "Motoboy", "Zé da Moto",
             "Mapa:", "[QR CODE]", Configuracao.RODAPE_CUPOM
         )
-        assertFalse("dinheiro não pago não pode sair como PAGO", texto.lines().any { it.trim() == "PAGO" })
+        assertFalse("dinheiro não pago não pode sair como PAGO", texto.contains("PAGO - NÃO COBRAR"))
+        assertFalse(texto.contains("CONFERIR PAGAMENTO"))
 
         // link impresso inteiro, em pedaços que cabem na bobina
         val linhasDoMapa = texto.lines().dropWhile { it != "Mapa:" }.drop(1).takeWhile { !it.startsWith("[QR") }
@@ -80,12 +81,42 @@ class CuponsDeliveryTest {
     }
 
     @Test
-    fun `pix pago aparece como PAGO e sem troco`() {
+    fun `pix pago aparece como PAGO - NAO COBRAR e sem troco`() {
         val t = ler(ExemplosDelivery.trabalho("t3", tipo = "via_entrega", pagamento = "pix_online", pago = true, trocoPara = null))
         val texto = Cupons.deliveryViaEntrega(t).textoDaPrevia()
-        contem(texto, "Pix online")
-        assertTrue(texto.lines().any { it.trim() == "PAGO" })
+        contem(texto, "Pix online", "PAGO - NÃO COBRAR")
         assertFalse(texto.contains("TROCO"))
+    }
+
+    @Test
+    fun `pago online com cartao avisa o motoboy pra nao cobrar`() {
+        val t = ler(
+            ExemplosDelivery.trabalho(
+                "t7", tipo = "via_entrega", pagamento = "online", pago = true, tipoOnline = "credit_card", trocoPara = null
+            )
+        )
+        assertEquals("credit_card", t.pedido.tipoPagamentoOnline)
+        val cupom = Cupons.deliveryViaEntrega(t)
+        val texto = cupom.textoDaPrevia()
+        contem(texto, "Pago online (cartão)", "PAGO - NÃO COBRAR")
+        assertFalse("não pode imprimir o código cru", texto.lines().any { it.endsWith(" online") && it.startsWith("Pagamento") })
+        texto.lines().forEach { assertTrue("linha longa demais: '$it'", it.length <= EscPos.COLUNAS) }
+        // aviso em letra dobrada, com acento em PC860
+        assertTrue(cupom.bytes().contemSequencia(Pc860.codificar("PAGO - NÃO COBRAR")))
+    }
+
+    @Test
+    fun `pago online com pix diz Pix`() {
+        val t = ler(ExemplosDelivery.trabalho("t8", tipo = "via_entrega", pagamento = "online", pago = true, tipoOnline = "pix", trocoPara = null))
+        contem(Cupons.deliveryViaEntrega(t).textoDaPrevia(), "Pago online (Pix)", "PAGO - NÃO COBRAR")
+    }
+
+    @Test
+    fun `online ainda sem pagamento nao manda deixar de cobrar`() {
+        val t = ler(ExemplosDelivery.trabalho("t9", tipo = "via_entrega", pagamento = "online", pago = false, trocoPara = null))
+        val texto = Cupons.deliveryViaEntrega(t).textoDaPrevia()
+        contem(texto, "CONFERIR PAGAMENTO")
+        assertFalse(texto.contains("NÃO COBRAR"))
     }
 
     @Test
