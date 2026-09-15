@@ -778,5 +778,158 @@ await ok("usuário do painel troca e apaga foto do dlv-fotos, sem tocar em outro
   outro: await um("select count(*)::int from storage.objects where bucket_id = 'outro'") }),
   (x: any) => x.trocou === 1 && x.apagou === "dlv-fotos" && x.outro === 1 || JSON.stringify(x));
 
+// ---------------------------------------------------------------- 18. pagamento online (migration dlv_pagamento_online)
+console.log("\n— Pagamento online (Checkout Pro)");
+await sql("UPDATE dlv_settings SET value = 'aberta' WHERE key = 'store_mode'");
+await sql("UPDATE dlv_settings SET value = 'true' WHERE key = 'auto_accept'");
+const cuponsDe = (id: string) => um("select count(*)::int from dlv_print_jobs where order_id = $1", [id]);
+const eventosCom = (id: string, nota: string) => um("select count(*)::int from dlv_order_events where order_id = $1 and note = $2", [id, nota]);
+const pedidoDb = async (id: string) => (await sql(`select status, cancel_kind, cancel_reason, payment_method, change_for_cents, paid_at is not null as pago,
+  accepted_at is not null as aceito, mp_payment_id, mp_payment_type, mp_preference_id, mp_checkout_url from dlv_orders where id = $1`, [id]))[0];
+const pedidoOnline = (tel: string) => pedido({ modo: "retirada", cliente: { nome: "Online Teste", telefone: tel }, pagamento: { forma: "online", troco_para_cents: 5000 } });
+const paraPagamento = (codigo: string) => como("service_role", null, () => um("select dlv_pedido_para_pagamento($1)", [codigo]));
+const registrarCheckout = (id: string, pref: string, url: string) => como("service_role", null, () => sql("select dlv_registrar_checkout($1, $2, $3)", [id, pref, url]));
+const confirmarOnline = (id: string, mp: string, valor: number, tipo: string | null) =>
+  como("service_role", null, () => um("select dlv_confirmar_pagamento_online($1, $2, $3, $4)", [id, mp, valor, tipo]));
+const acompanhar = (codigo: string) => como("anon", null, () => um("select dlv_acompanhar_pedido($1)", [codigo]));
+async function esvaziarFila() {
+  const todos: any[] = [];
+  for (let i = 0; i < 20; i++) {
+    const r = await como("authenticated", TERMINAL, () => um("select dlv_reservar_impressoes(50)"));
+    if (!r.length) break;
+    await como("authenticated", TERMINAL, async () => { for (const j of r) await sql("select dlv_concluir_impressao($1, true)", [j.trabalho_id]); });
+    todos.push(...r);
+  }
+  return todos;
+}
+
+// Pix na entrega: fora do cardápio público (decisão do dono), continua no painel
+await recusa("cardápio recusa 'pix_entrega'", () => criar(pedido({
+  cliente: { nome: "Pix Entrega", telefone: "17870000001" }, pagamento: { forma: "pix_entrega" } })), "Escolha a forma de pagamento");
+const pixEntrega = await ok("painel continua lançando 'pix_entrega': vai direto para produção, sem esperar pagamento", () => como("authenticated", PAINEL, () =>
+  um("select dlv_criar_pedido_painel($1, 'Caixa')", [JSON.stringify(pedido({ cliente: { nome: "Pix Entrega", telefone: "17870000001" }, pagamento: { forma: "pix_entrega" } }))])),
+  (r: any) => r.status === "em_producao" && r.pix_expira_em === null || JSON.stringify(r));
+await ok("pedido 'pix_entrega' do painel: não pago, com os 3 cupons", async () => ({ o: await pedidoDb(pixEntrega.pedido_id), c: await cuponsDe(pixEntrega.pedido_id) }),
+  (x: any) => x.o.payment_method === "pix_entrega" && !x.o.pago && x.o.aceito && x.c === 3 || JSON.stringify(x));
+
+// cardápio, configuração e acesso
+await ok("cardápio público lista as formas ['online', 'dinheiro', 'credito', 'debito']", () => como("anon", null, () => um("select dlv_cardapio_publico()")),
+  (m: any) => JSON.stringify(m.loja.formas_pagamento) === JSON.stringify(["online", "dinheiro", "credito", "debito"]) || JSON.stringify(m.loja.formas_pagamento));
+await ok("configuração online_payment_expiration_minutes = 30, com descrição", () => sql("select value, description from dlv_settings where key = 'online_payment_expiration_minutes'"),
+  (r: any[]) => r.length === 1 && r[0].value === "30" && r[0].description?.length > 10 || JSON.stringify(r));
+await recusa("anônimo não executa dlv_pedido_para_pagamento", () => como("anon", null, () => sql("select dlv_pedido_para_pagamento($1)", ["0".repeat(32)])), "permission denied");
+await recusa("anônimo não executa dlv_registrar_checkout", () => como("anon", null, () => sql("select dlv_registrar_checkout(gen_random_uuid(), 'x', 'https://x.com')")), "permission denied");
+await recusa("anônimo não executa dlv_confirmar_pagamento_online", () => como("anon", null, () => sql("select dlv_confirmar_pagamento_online(gen_random_uuid(), 'x', 1, 'pix')")), "permission denied");
+await recusa("usuário do painel também não confirma pagamento online", () => como("authenticated", PAINEL, () => sql("select dlv_confirmar_pagamento_online(gen_random_uuid(), 'x', 1, 'pix')")), "permission denied");
+await recusa("usuário do painel não lê pedido para pagamento", () => como("authenticated", PAINEL, () => sql("select dlv_pedido_para_pagamento($1)", ["0".repeat(32)])), "permission denied");
+await ok("anônimo executa só as 5 funções públicas do delivery", () => sql(`select string_agg(p.proname, ',' order by p.proname) f from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and left(p.proname, 4) = 'dlv_' and has_function_privilege('anon', p.oid, 'EXECUTE')`),
+  (r: any[]) => r[0].f === "dlv_acompanhar_pedido,dlv_cardapio_publico,dlv_consultar_entrega,dlv_criar_pedido,dlv_status_loja" || r[0].f);
+
+// criar
+const on1 = await ok("pedido 'online' nasce aguardando pagamento, com prazo", () => criar(pedidoOnline("17870000002")),
+  (r: any) => r.status === "aguardando_pagamento" && !!r.pix_expira_em && r.total_cents === 2940 || JSON.stringify(r));
+await ok("pedido 'online' aguardando: sem cupom, sem troco, não aceito, prazo de 30 min", async () => ({
+  c: await cuponsDe(on1.pedido_id), o: await pedidoDb(on1.pedido_id),
+  prazo: await um("select pix_expires_at between now() + interval '29 minutes' and now() + interval '31 minutes' from dlv_orders where id = $1", [on1.pedido_id]) }),
+  (x: any) => x.c === 0 && x.o.payment_method === "online" && x.o.change_for_cents === null && !x.o.pago && !x.o.aceito && x.prazo === true || JSON.stringify(x));
+await ok("estação não recebe cupom do pedido aguardando pagamento", async () => (await esvaziarFila()).filter((j: any) => j.pedido.numero === on1.numero).length, (n: number) => n === 0 || `${n} cupons`);
+await recusa("painel não lança pedido 'online'", () => como("authenticated", PAINEL, () => um("select dlv_criar_pedido_painel($1, 'Caixa')", [JSON.stringify(pedidoOnline("17870000003"))])), "forma de pagamento");
+await recusa("painel não aceita pedido online não pago", () => como("authenticated", PAINEL, () => sql("select dlv_avancar_pedido($1, 'em_producao', 'Caixa')", [on1.pedido_id])), "não pode ir");
+
+// dados para o checkout
+await ok("Edge Function lê o pedido para montar o checkout", () => paraPagamento(on1.codigo),
+  (r: any) => r.id === on1.pedido_id && r.numero === on1.numero && r.status === "aguardando_pagamento" && r.forma === "online" && r.total_cents === 2940
+    && r.cliente_nome === "Online Teste" && r.cliente_telefone === "17870000002" && !!r.expira_em && r.preference_id === null && r.checkout_url === null
+    && r.itens.length === 1 && r.itens[0].nome === "Filé de Frango Empanado (Pequena)" && r.itens[0].quantidade === 1 && r.itens[0].total_cents === 2940 || JSON.stringify(r));
+await recusa("pedido para pagamento: código inválido", () => paraPagamento("abc"), "Pedido não encontrado");
+await recusa("pedido para pagamento: código que não existe", () => paraPagamento("f".repeat(32)), "Pedido não encontrado");
+
+// registrar checkout
+const URL1 = "https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-1";
+await recusa("checkout com link sem https é recusado", () => registrarCheckout(on1.pedido_id, "pref-1", "http://www.mercadopago.com.br/x"), "https://");
+await recusa("checkout sem preferência é recusado", () => registrarCheckout(on1.pedido_id, "  ", URL1), "sem identificador");
+const pixAntigo = await criar(pedido({ cliente: { nome: "Pix Antigo", telefone: "17870000004" }, pagamento: { forma: "pix_online" } }));
+await recusa("checkout em pedido Pix online (não é 'online') é recusado", () => registrarCheckout(pixAntigo.pedido_id, "pref-x", URL1), "Pedido não está aguardando pagamento online");
+await recusa("checkout em pedido Pix na entrega é recusado", () => registrarCheckout(pixEntrega.pedido_id, "pref-x", URL1), "Pedido não está aguardando pagamento online");
+await ok("registra a preferência do checkout", async () => { await registrarCheckout(on1.pedido_id, " pref-1 ", URL1); return paraPagamento(on1.codigo); },
+  (r: any) => r.preference_id === "pref-1" && r.checkout_url === URL1 || JSON.stringify(r));
+await ok("cliente acompanha: link e prazo do pagamento enquanto aguarda", () => acompanhar(on1.codigo),
+  (r: any) => r.status === "aguardando_pagamento" && r.pagamento_link === URL1 && !!r.pagamento_expira_em && r.pagamento === "online" && r.pago === false || JSON.stringify(r));
+
+// confirmar
+await recusa("valor pago diferente do total é recusado", () => confirmarOnline(on1.pedido_id, "mp-on-1", 100, "pix"), "diferente do total");
+await recusa("pagamento de pedido que não existe", () => confirmarOnline("00000000-0000-0000-0000-00000000abcd", "mp-on-x", 2940, "pix"), "não pertence a nenhum pedido");
+await recusa("confirmar pagamento online em pedido Pix online é recusado", () => confirmarOnline(pixAntigo.pedido_id, "mp-on-y", 2940, "pix"), "não é de pagamento online");
+await ok("pagamento confirmado com aceite automático: vai para produção", () => confirmarOnline(on1.pedido_id, "mp-on-1", 2940, "pix"),
+  (r: any) => r.numero === on1.numero && r.status === "em_producao" && r.ja_confirmado === false || JSON.stringify(r));
+await ok("gravou id, tipo e pago; gerou os 3 cupons; auditoria 'Mercado Pago' + aceite automático", async () => ({
+  o: await pedidoDb(on1.pedido_id), c: await cuponsDe(on1.pedido_id),
+  ev: await sql("select to_status, by_name, note from dlv_order_events where order_id = $1", [on1.pedido_id]) }),
+  (x: any) => x.o.pago && x.o.aceito && x.o.mp_payment_id === "mp-on-1" && x.o.mp_payment_type === "pix" && x.c === 3
+    && x.ev.some((e: any) => e.to_status === "em_analise" && e.by_name === "Mercado Pago" && e.note === "Pagamento online confirmado")
+    && x.ev.some((e: any) => e.to_status === "em_producao" && e.by_name === "aceite automático") || JSON.stringify(x));
+await ok("estação recebe os cupons do pedido online com pagamento='online', pago=true e mp_payment_type='pix'", async () =>
+  (await esvaziarFila()).filter((j: any) => j.pedido.numero === on1.numero),
+  (r: any[]) => r.length === 3 && r.filter((j) => j.tipo === "producao").length === 2
+    && r.every((j) => j.pedido.pagamento === "online" && j.pedido.pago === true && j.pedido.mp_payment_type === "pix") || JSON.stringify(r.map((j: any) => [j.tipo, j.pedido])));
+await ok("cupom de pedido sem pagamento online traz mp_payment_type null", async () => {
+  const p = await criar(pedido({ cliente: { nome: "Cupom Dinheiro", telefone: "17870000009" } }));
+  return (await esvaziarFila()).filter((j: any) => j.pedido.numero === p.numero);
+}, (r: any[]) => r.length === 3 && r.every((j) => "mp_payment_type" in j.pedido && j.pedido.mp_payment_type === null && j.pedido.pagamento === "dinheiro" && j.pedido.pago === false) || JSON.stringify(r.map((j: any) => j.pedido)));
+await ok("webhook repetido (mesmo id) não duplica", async () => ({ r: await confirmarOnline(on1.pedido_id, "mp-on-1", 2940, "pix"), c: await cuponsDe(on1.pedido_id) }),
+  (x: any) => x.r.ja_confirmado === true && x.r.status === "em_producao" && x.r.numero === on1.numero && x.c === 3 || JSON.stringify(x));
+await ok("outro pagamento no mesmo pedido: avisa estorno (duplicado) sem mudar o pedido", async () => ({
+  r: await confirmarOnline(on1.pedido_id, "mp-on-2", 2940, "credit_card"), o: await pedidoDb(on1.pedido_id),
+  ev: await eventosCom(on1.pedido_id, "Pagamento online DUPLICADO (id mp-on-2): ESTORNAR"), c: await cuponsDe(on1.pedido_id) }),
+  (x: any) => x.r.precisa_estorno === true && x.r.motivo === "duplicado" && x.r.status === "em_producao"
+    && x.o.status === "em_producao" && x.o.mp_payment_id === "mp-on-1" && x.o.mp_payment_type === "pix" && x.ev === 1 && x.c === 3 || JSON.stringify(x));
+await ok("acompanhar depois de pago: sem link nem prazo", () => acompanhar(on1.codigo),
+  (r: any) => r.status === "em_producao" && r.pago === true && r.pagamento_link === null && r.pagamento_expira_em === null || JSON.stringify(r));
+const on5 = await criar(pedidoOnline("17870000010"));
+await recusa("id de pagamento já ligado a outro pedido é recusado", () => confirmarOnline(on5.pedido_id, "mp-on-1", 2940, "pix"), "já está ligado a outro pedido");
+
+await sql("UPDATE dlv_settings SET value = 'false' WHERE key = 'auto_accept'");
+const on2 = await criar(pedidoOnline("17870000005"));
+await ok("sem aceite automático: pagamento confirmado fica em análise e não imprime", async () => ({
+  r: await confirmarOnline(on2.pedido_id, "mp-on-3", 2940, "credit_card"), c: await cuponsDe(on2.pedido_id), o: await pedidoDb(on2.pedido_id) }),
+  (x: any) => x.r.status === "em_analise" && x.r.ja_confirmado === false && x.c === 0 && x.o.pago && x.o.mp_payment_type === "credit_card" || JSON.stringify(x));
+await sql("UPDATE dlv_settings SET value = 'true' WHERE key = 'auto_accept'");
+
+// expiração
+const on3 = await criar(pedidoOnline("17870000006"));
+const pix3 = await criar(pedido({ cliente: { nome: "Pix Vence", telefone: "17870000007" }, pagamento: { forma: "pix_online" } }));
+await registrarCheckout(on3.pedido_id, "pref-3", "https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-3");
+await sql("update dlv_orders set pix_expires_at = now() - interval '1 minute' where id = any($1::uuid[])", [[on3.pedido_id, pix3.pedido_id]]);
+await ok("online vencido: cancelado (pix_expirado) com 'Pagamento online não feito a tempo', sem link", () => acompanhar(on3.codigo),
+  (r: any) => r.status === "cancelado" && r.cancelamento === "pix_expirado" && r.motivo_cancelamento === "Pagamento online não feito a tempo"
+    && r.pagamento_link === null && r.pagamento_expira_em === null || JSON.stringify(r));
+await ok("Pix online vencido continua 'Pix não pago a tempo'; auditoria com o texto de cada forma", () => sql(`
+  select o.payment_method, o.cancel_reason, e.note, e.by_name from dlv_orders o join dlv_order_events e on e.order_id = o.id and e.to_status = 'cancelado'
+   where o.id = any($1::uuid[]) order by o.payment_method`, [[on3.pedido_id, pix3.pedido_id]]),
+  (r: any[]) => r.length === 2 && r[0].payment_method === "online" && r[0].cancel_reason === "Pagamento online não feito a tempo" && r[0].note === r[0].cancel_reason
+    && r[1].payment_method === "pix_online" && r[1].cancel_reason === "Pix não pago a tempo" && r[1].note === "Pix não pago a tempo"
+    && r.every((x) => x.by_name === "sistema") || JSON.stringify(r));
+await recusa("checkout não é registrado em pedido online vencido", () => registrarCheckout(on3.pedido_id, "pref-3b", "https://x.com/y"), "Pedido não está aguardando pagamento online");
+await ok("pagou depois do prazo: pedido reabre e vai para produção", async () => ({
+  r: await confirmarOnline(on3.pedido_id, "mp-on-4", 2940, "pix"), o: await pedidoDb(on3.pedido_id),
+  ev: await eventosCom(on3.pedido_id, "Pagamento online feito depois do prazo: pedido reaberto"), c: await cuponsDe(on3.pedido_id) }),
+  (x: any) => x.r.status === "em_producao" && x.r.ja_confirmado === false && x.o.cancel_kind === null && x.o.cancel_reason === null
+    && x.o.pago && x.o.mp_payment_id === "mp-on-4" && x.ev === 1 && x.c === 3 || JSON.stringify(x));
+
+// cancelado pela loja
+const on4 = await criar(pedidoOnline("17870000008"));
+await ok("painel recusa pedido online ainda não pago: sem estorno", () => como("authenticated", PAINEL, () => um("select dlv_cancelar_pedido($1, 'cliente desistiu', 'Caixa')", [on4.pedido_id])),
+  (r: any) => r.tipo === "recusado" && r.precisa_estorno === false || JSON.stringify(r));
+await ok("pagamento em pedido cancelado pela loja: grava e avisa estorno", async () => ({
+  r: await confirmarOnline(on4.pedido_id, "mp-on-5", 2940, "credit_card"), o: await pedidoDb(on4.pedido_id),
+  ev: await eventosCom(on4.pedido_id, "Pagamento online em pedido cancelado: ESTORNAR"), c: await cuponsDe(on4.pedido_id) }),
+  (x: any) => x.r.precisa_estorno === true && x.r.motivo === "cancelado" && x.r.status === "cancelado" && x.o.status === "cancelado" && x.o.cancel_kind === "recusado"
+    && x.o.pago && x.o.mp_payment_id === "mp-on-5" && x.o.mp_payment_type === "credit_card" && x.ev === 1 && x.c === 0 || JSON.stringify(x));
+await ok("webhook repetido no cancelado pago: ja_confirmado, continua cancelado", () => confirmarOnline(on4.pedido_id, "mp-on-5", 2940, "credit_card"),
+  (r: any) => r.ja_confirmado === true && r.status === "cancelado" || JSON.stringify(r));
+await ok("painel cancela pedido online pago: precisa_estorno", () => como("authenticated", PAINEL, () => um("select dlv_cancelar_pedido($1, 'acabou o frango', 'Caixa')", [on1.pedido_id])),
+  (r: any) => r.tipo === "cancelado" && r.precisa_estorno === true || JSON.stringify(r));
+
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
