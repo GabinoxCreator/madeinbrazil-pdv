@@ -44,9 +44,11 @@ await db.exec(`
   GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, service_role;
 `);
 
-// Duas fases: primeiro tudo ANTES da migration de tamanhos, cria pedidos com os pratos
-// antigos ("Filé de Frango Média"...) e só então aplica o resto — igual ao servidor real.
+// Três fases, igual ao servidor real: (1) tudo ANTES da migration de tamanhos, cria pedidos com os
+// pratos antigos ("Filé de Frango Média"...); (2) tamanhos, cria pedidos com variação ("Filé de Frango
+// (Média)" + Empanado); (3) variações e o resto.
 const CORTE_TAMANHOS = "20260915090000";
+const CORTE_VARIACOES = "20260915120000";
 const arquivos = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
 async function aplicar(lista: string[]) {
   for (const f of lista) {
@@ -101,16 +103,17 @@ const antigoB = await ok("pedido antigo com 'Filé de Frango Pequena' + porção
       { opcao_id: ids.batataAcomp }] },
     { item_id: ids.batata, quantidade: 1 }],
 })])), (r: any) => r.subtotal_cents === 2 * 2590 + 3490 || JSON.stringify(r));
-const fotoAntigos = () => sql(`
-  select o.number, o.status, o.subtotal_cents, o.total_cents, oi.item_id, oi.item_name, oi.quantity, oi.unit_price_cents, oi.total_cents as linha,
+const fotoPedidos = (pedidos: string[]) => sql(`
+  select o.number, o.status, o.subtotal_cents, o.total_cents, oi.item_id, oi.item_name, to_jsonb(oi) ->> 'size_id' as size_id, to_jsonb(oi) ->> 'size_name' as size_name, oi.quantity, oi.unit_price_cents, oi.total_cents as linha,
          oi.production_point_id, (select json_agg(json_build_object('g', x.group_name, 'n', x.option_name, 'q', x.quantity, 'c', x.extra_cents, 'o', x.option_id) order by x.option_name)
                                    from dlv_order_item_options x where x.order_item_id = oi.id) as opcoes,
          (select count(*)::int from dlv_print_jobs j where j.order_id = o.id) as cupons
     from dlv_orders o join dlv_order_items oi on oi.order_id = o.id
-   where o.id in ($1, $2) order by o.number, oi.item_name`, [antigoA.pedido_id, antigoB.pedido_id]);
+   where o.id = any($1::uuid[]) order by o.number, oi.item_name`, [pedidos]);
+const fotoAntigos = () => fotoPedidos([antigoA.pedido_id, antigoB.pedido_id]);
 const antes = JSON.stringify(await fotoAntigos());
 
-await aplicar(arquivos.filter((f) => f >= CORTE_TAMANHOS));
+await aplicar(arquivos.filter((f) => f >= CORTE_TAMANHOS && f < CORTE_VARIACOES));
 
 console.log("\n— Migration de tamanhos sobre pedidos antigos");
 await ok("pedidos antigos continuam idênticos (itens, complementos, preços, cupons)", async () => JSON.stringify(await fotoAntigos()), (d: string) => d === antes || `antes ${antes}\ndepois ${d}`);
@@ -155,6 +158,126 @@ await ok("tamanhos copiam preço, pausado e descrição (só guarda quando muda)
     join dlv_categories c on c.id = i.category_id where c.name = 'Especiais de Frango' order by s.sort_order`),
   (r: any[]) => r.map((x) => x.short_name + x.price_cents).join() === "P2390,M2690,G2990" && r[0].description === null && r[1].description.includes("2 filés") && r.every((x) => !x.is_paused) || JSON.stringify(r));
 
+// ---------------------------------------------------------------- 0b. pedidos com variação, antes da migration de variações
+console.log("\n— Pedidos com variação (antes da migration de variações)");
+const menuV0 = await como("anon", null, () => um("select dlv_cardapio_publico()"));
+const prato0 = (cat: string, nome: string) => menuV0.categorias.find((c: any) => c.nome === cat).itens.find((i: any) => i.nome === nome);
+const tam0 = (p: any, n: string) => p.tamanhos.find((t: any) => t.nome === n);
+const op0 = (t: any, g: string, n: string) => ({ opcao_id: t.grupos.find((x: any) => x.nome === g).opcoes.find((o: any) => o.nome === n).id });
+const frango0 = prato0("Especiais de Frango", "Filé de Frango"), bife0 = prato0("Especiais de Carne", "Bife");
+const criar0 = (p: any) => como("anon", null, () => um("select dlv_criar_pedido($1)", [JSON.stringify(p)]));
+const antigoC = await ok("pedido 'Filé de Frango (Média)' + Empanado + 2 acompanhamentos: 26,90 + 2,00", () => criar0({
+  modo: "retirada", cliente: { nome: "Antigo C", telefone: "17911110003" }, pagamento: { forma: "credito" },
+  itens: [{ item_id: frango0.id, tamanho_id: tam0(frango0, "Média").id, quantidade: 1, opcoes: [
+    op0(tam0(frango0, "Média"), "Escolhe seu Filé de Frango", "Empanado"),
+    op0(tam0(frango0, "Média"), "Escolha o Acompanhamento", "Macarrão"),
+    op0(tam0(frango0, "Média"), "Escolha o Acompanhamento", "Farofa")] }],
+}), (r: any) => r.subtotal_cents === 2890 || JSON.stringify(r));
+const antigoD = await ok("pedido 'Bife (Pequena)' A Cavalo + batata, 2 unidades: 2 × (24,90 + 2,00)", () => criar0({
+  modo: "entrega", cliente: { nome: "Antigo D", telefone: "17911110004" }, endereco: { rua: "Rua Antiga", numero: "4", ...perto },
+  pagamento: { forma: "dinheiro", troco_para_cents: 10000 },
+  itens: [{ item_id: bife0.id, tamanho_id: tam0(bife0, "Pequena").id, quantidade: 2, opcoes: [
+    op0(tam0(bife0, "Pequena"), "Escolha Sua Carne", "A Cavalo"),
+    op0(tam0(bife0, "Pequena"), "Escolha o Acompanhamento", "Batata Frita")] }],
+}), (r: any) => r.subtotal_cents === 2 * 2690 || JSON.stringify(r));
+await como("authenticated", TERMINAL, async () => {
+  const r = await um("select dlv_reservar_impressoes(50)");
+  for (const j of r) await sql("select dlv_concluir_impressao($1, true)", [j.trabalho_id]);
+});
+const todosAntigos = () => fotoPedidos([antigoA.pedido_id, antigoB.pedido_id, antigoC.pedido_id, antigoD.pedido_id]);
+const antesVariacoes = JSON.stringify(await todosAntigos());
+
+const arqVariacoes = arquivos.find((f) => f.startsWith(CORTE_VARIACOES))!;
+const contagemCardapio = () => sql(`select (select count(*)::int from dlv_items) itens, (select count(*)::int from dlv_items where not is_active) inativos,
+  (select count(*)::int from dlv_item_sizes) tamanhos, (select count(*)::int from dlv_item_size_option_groups) regras`);
+const regraTilapiaG = (await sql(`select sg.* from dlv_item_size_option_groups sg join dlv_item_sizes s on s.id = sg.size_id
+  join dlv_items i on i.id = s.item_id join dlv_categories c on c.id = i.category_id join dlv_option_groups g on g.id = sg.group_id
+  where c.name = 'Especiais de Peixe' and s.name = 'Grande' and i.is_active and g.name = 'Escolha seu Filé de Tilápia'`))[0];
+async function tentarVariacoes(mexer: () => Promise<any>, desfazer: () => Promise<any>) {
+  await mexer();
+  try { await db.exec(readFileSync(`${DIR}/${arqVariacoes}`, "utf8")); }
+  finally { await db.exec("ROLLBACK"); await desfazer(); }
+}
+const contagemAntes = JSON.stringify(await contagemCardapio());
+await recusa("migration de variações: grupo de variação faltando num tamanho → RAISE", () => tentarVariacoes(
+  () => sql("delete from dlv_item_size_option_groups where size_id = $1 and group_id = $2", [regraTilapiaG.size_id, regraTilapiaG.group_id]),
+  () => sql("insert into dlv_item_size_option_groups (size_id, group_id, min_choices, max_choices, sort_order) values ($1, $2, $3, $4, $5)",
+    [regraTilapiaG.size_id, regraTilapiaG.group_id, regraTilapiaG.min_choices, regraTilapiaG.max_choices, regraTilapiaG.sort_order])),
+  "não está em todos os tamanhos");
+await recusa("migration de variações: regra inconsistente (variação opcional num tamanho) → RAISE", () => tentarVariacoes(
+  () => sql("update dlv_item_size_option_groups set min_choices = 0 where size_id = $1 and group_id = $2", [regraTilapiaG.size_id, regraTilapiaG.group_id]),
+  () => sql("update dlv_item_size_option_groups set min_choices = 1 where size_id = $1 and group_id = $2", [regraTilapiaG.size_id, regraTilapiaG.group_id])),
+  "não está em todos os tamanhos");
+await ok("migration recusada não gravou nada", async () => JSON.stringify(await contagemCardapio()), (d: string) => d === contagemAntes || `antes ${contagemAntes} depois ${d}`);
+
+await aplicar(arquivos.filter((f) => f >= CORTE_VARIACOES));
+
+console.log("\n— Migration de variações");
+await ok("pedidos antigos (antes dos tamanhos e antes das variações) continuam idênticos", async () => JSON.stringify(await todosAntigos()),
+  (d: string) => d === antesVariacoes || `antes ${antesVariacoes}\ndepois ${d}`);
+await ok("pedido com variação ainda aponta para o 'Filé de Frango' original, agora inativo, e o tamanho antigo", () => sql(
+  `select i.name, i.is_active, oi.item_name, oi.size_name, s.is_active as tam_ativo from dlv_order_items oi join dlv_items i on i.id = oi.item_id
+    join dlv_item_sizes s on s.id = oi.size_id where oi.order_id = $1`, [antigoC.pedido_id]),
+  (r: any[]) => r.length === 1 && r[0].name === "Filé de Frango" && r[0].is_active === false && r[0].item_name === "Filé de Frango (Média)"
+    && r[0].size_name === "Média" && r[0].tam_ativo === false || JSON.stringify(r));
+await ok("cliente acompanha o pedido com variação como antes (Empanado nos complementos)", () => como("anon", null, () => um("select dlv_acompanhar_pedido($1)", [antigoC.codigo])),
+  (r: any) => r.itens[0].nome === "Filé de Frango (Média)" && r.itens[0].opcoes.some((o: any) => o.nome === "Empanado") || JSON.stringify(r.itens));
+await ok("contagens: 18 pratos novos, 9 originais inativos, 54 tamanhos, 156 regras novas", () => contagemCardapio(),
+  (r: any[]) => JSON.stringify(r[0]) === JSON.stringify({ itens: 98, inativos: 29, tamanhos: 84, regras: 267 }) || JSON.stringify(r[0]));
+await ok("pratos ativos das categorias com variação (ordem do cardápio)", () => sql(`
+  select c.name cat, string_agg(i.name, ' | ' order by i.sort_order, i.name) pratos from dlv_items i join dlv_categories c on c.id = i.category_id
+   where i.is_active and c.name in ('PF do Dia','Especiais de Carne','Especiais de Frango','Especiais de Peixe','Especiais Parmegianas','Especiais Strogonoff')
+   group by c.name, c.sort_order order by c.sort_order`),
+  (r: any[]) => JSON.stringify(r.map((x) => [x.cat, x.pratos])) === JSON.stringify([
+    ["PF do Dia", "Strogonoff de Carne | Strogonoff de Frango | Filé de Frango Grelhado | Filé de Frango Empanado | Feijoada Completa | Só Feijoada 500g | Lasanha 700g | Bife a Cavalo | Bife Acebolado | Parmegiana de Frango | Parmegiana de Carne"],
+    ["Especiais de Carne", "Bife a Cavalo | Bife Acebolado"],
+    ["Especiais de Frango", "Filé de Frango Grelhado | Filé de Frango Empanado"],
+    ["Especiais de Peixe", "Filé de Tilápia Empanado | Filé de Tilápia Grelhado"],
+    ["Especiais Parmegianas", "Parmegiana de Frango | Parmegiana de Carne"],
+    ["Especiais Strogonoff", "Strogonoff de Carne | Strogonoff de Frango"],
+  ]) || JSON.stringify(r));
+await ok("originais inativos: Stronogoff, Filé de Frango ×2, Bife ×2, Parmegiana ×2, Filé de Tilápia, Strogonoff", () => sql(`
+  select i.name from dlv_items i where not i.is_active and exists (select 1 from dlv_item_sizes s where s.item_id = i.id) order by i.name`),
+  (r: any[]) => r.map((x) => x.name).join() === "Bife,Bife,Filé de Frango,Filé de Frango,Filé de Tilápia,Parmegiana,Parmegiana,Strogonoff,Stronogoff" || JSON.stringify(r));
+await ok("PF do Dia: 'Strogonoff' corrigido, nenhum 'Stronogoff' ativo, tudo continua pausado e no mesmo dia", () => sql(`
+  select i.name, i.is_paused, i.weekdays from dlv_items i join dlv_categories c on c.id = i.category_id where c.name = 'PF do Dia' and i.is_active and i.name ilike 'stro%' order by i.name`),
+  (r: any[]) => r.map((x) => `${x.name}:${x.is_paused}:${x.weekdays}`).join() === "Strogonoff de Carne:true:2,Strogonoff de Frango:true:2" || JSON.stringify(r));
+await ok("preço de cada tamanho do 'Bife a Cavalo' = do Bife + 2,00 (Especiais e PF do Dia)", () => sql(`
+  select c.name cat, sn.short_name, sn.price_cents novo, so.price_cents velho from dlv_items n join dlv_categories c on c.id = n.category_id
+    join dlv_item_sizes sn on sn.item_id = n.id
+    join dlv_items o on o.category_id = n.category_id and o.name = 'Bife' and not o.is_active
+    join dlv_item_sizes so on so.item_id = o.id and so.name = sn.name
+   where n.name = 'Bife a Cavalo' and n.is_active order by c.name, sn.sort_order`),
+  (r: any[]) => r.length === 6 && r.every((x) => x.novo === x.velho + 200) && r.map((x) => x.short_name + x.novo).join() === "P2690,M2990,G3290,P2390,M2790,G3190" || JSON.stringify(r));
+await ok("prato novo copia foto, descrição, ponto, dias, pausado; anota_id vazio; tamanhos copiam descrição", () => sql(`
+  select n.name, n.image_url = o.image_url foto, n.description = o.description descr, n.production_point_id = o.production_point_id ponto,
+         n.weekdays is not distinct from o.weekdays dias, n.is_paused = o.is_paused pausado, n.anota_id is null sem_anota,
+         (select string_agg(coalesce(s.description, '-'), '|' order by s.sort_order) from dlv_item_sizes s where s.item_id = n.id)
+           = (select string_agg(coalesce(s.description, '-'), '|' order by s.sort_order) from dlv_item_sizes s where s.item_id = o.id) descr_tam
+    from dlv_items n join dlv_items o on o.category_id = n.category_id and not o.is_active and o.name = 'Filé de Frango'
+   where n.is_active and n.name like 'Filé de Frango %'`),
+  (r: any[]) => r.length === 4 && r.every((x) => x.foto && x.descr && x.ponto && x.dias && x.pausado && x.sem_anota && x.descr_tam) || JSON.stringify(r));
+await ok("nenhum tamanho ativo ligado a grupo de variação; grupos e opções continuam existindo", () => sql(`
+  select (select count(*)::int from dlv_item_size_option_groups sg join dlv_item_sizes s on s.id = sg.size_id and s.is_active
+            join dlv_items i on i.id = s.item_id and i.is_active join dlv_option_groups g on g.id = sg.group_id
+           where g.name in ('Escolha Sua Carne','Escolha Seu Strogonoff','Escolhe seu Filé de Frango','Escolha seu Filé de Tilápia','Escolha Sua Parmegiana')) ligados,
+         (select count(*)::int from dlv_options o join dlv_option_groups g on g.id = o.group_id and g.is_active
+           where o.is_active and g.name in ('Escolha Sua Carne','Escolha Seu Strogonoff','Escolhe seu Filé de Frango','Escolha seu Filé de Tilápia','Escolha Sua Parmegiana')) opcoes`),
+  (r: any[]) => r[0].ligados === 0 && r[0].opcoes === 10 || JSON.stringify(r));
+await ok("regras dos tamanhos novos = originais sem a variação (Filé de Frango Empanado)", () => sql(`
+  select s.short_name, string_agg(g.name || ' ' || sg.min_choices || '-' || sg.max_choices, ', ' order by sg.sort_order) regras
+    from dlv_items i join dlv_categories c on c.id = i.category_id and c.name = 'Especiais de Frango'
+    join dlv_item_sizes s on s.item_id = i.id join dlv_item_size_option_groups sg on sg.size_id = s.id join dlv_option_groups g on g.id = sg.group_id
+   where i.name = 'Filé de Frango Empanado' group by s.short_name, s.sort_order order by s.sort_order`),
+  (r: any[]) => r.map((x) => `${x.short_name}: ${x.regras}`).join(" / ") ===
+    "P: Escolha o Acompanhamento 1-1, + Proteína 0-2, Bebidas 0-10 / M: Escolha o Acompanhamento 1-2, + Proteína 0-2, Bebidas 0-10 / G: Escolha o Acompanhamento 0-2, + Proteína 0-2, Bebidas 0-10" || JSON.stringify(r));
+await ok("rodar a migration de variações de novo é recusado e não grava nada", async () => {
+  const c0 = JSON.stringify(await contagemCardapio());
+  let erro = "";
+  try { await db.exec(readFileSync(`${DIR}/${arqVariacoes}`, "utf8")); } catch (e: any) { erro = e.message; } finally { await db.exec("ROLLBACK"); }
+  return { erro, igual: JSON.stringify(await contagemCardapio()) === c0 };
+}, (x: any) => x.erro.includes("esperado 9") && x.igual || JSON.stringify(x));
+
 // ---------------------------------------------------------------- 1. acesso
 console.log("\n— Acesso");
 await recusa("anônimo não lê pedidos direto", () => como("anon", null, () => sql("select * from dlv_orders")), "permission denied");
@@ -174,7 +297,7 @@ await ok("PF do Dia (tudo pausado) não aparece", async () => menu.categorias.ma
 await ok("embalagem separada não existe", async () => JSON.stringify(menu), (s: string) => !s.includes("Embalagem") || "achou embalagem");
 await ok("pedido mínimo R$ 15 e faixas no cardápio", async () => menu.loja, (l: any) => l.pedido_minimo_cents === 1500 && l.faixas_entrega.length === 5 || JSON.stringify(l));
 
-const pratoFrango = menu.categorias.find((c: any) => c.nome === "Especiais de Frango").itens.find((i: any) => i.nome === "Filé de Frango");
+const pratoFrango = menu.categorias.find((c: any) => c.nome === "Especiais de Frango").itens.find((i: any) => i.nome === "Filé de Frango Empanado");
 const frango = pratoFrango.tamanhos.find((t: any) => t.nome === "Pequena");  // os grupos vêm do tamanho
 const grupo = (item: any, n: string) => item.grupos.find((g: any) => g.nome === n);
 const opcao = (item: any, g: string, n: string) => grupo(item, g).opcoes.find((o: any) => o.nome === n);
@@ -183,7 +306,6 @@ const agua = menu.categorias.find((c: any) => c.nome === "Bebidas").itens.find((
 const linhaFrango = (extra: any[] = []) => ({
   item_id: pratoFrango.id, tamanho_id: frango.id, quantidade: 1, preco_cents: 1, // preço mandado pelo navegador deve ser ignorado
   opcoes: [
-    { opcao_id: opcao(frango, "Escolhe seu Filé de Frango", "Empanado").id },
     { opcao_id: opcao(frango, "Escolha o Acompanhamento", "Batata Frita").id },
     { opcao_id: opcao(frango, "Bebidas", "Coca-Cola 200ml").id },
     ...extra,
@@ -223,7 +345,7 @@ await sql("UPDATE dlv_settings SET value = 'aberta' WHERE key = 'store_mode'");
 
 // ---------------------------------------------------------------- 5. pedido em dinheiro com aceite automático
 console.log("\n— Pedido em dinheiro (aceite automático)");
-const p1 = await ok("cria pedido: 23,90 + empanado 2,00 + coca 3,50 = 29,40, frete grátis", () => criar(pedido()),
+const p1 = await ok("cria pedido: Filé de Frango Empanado P 25,90 + coca 3,50 = 29,40, frete grátis", () => criar(pedido()),
   // número >= 5000: pedido recusado antes também gasta número (sequência do Postgres não volta)
   (r: any) => r.subtotal_cents === 2940 && r.total_cents === 2940 && r.status === "em_producao" && r.numero >= 5000 || JSON.stringify(r));
 await ok("gerou 3 cupons: cozinha, bar de cerveja e via do caixa", () => sql(
@@ -232,7 +354,7 @@ await ok("gerou 3 cupons: cozinha, bar de cerveja e via do caixa", () => sql(
 await ok("cliente salvo com endereço", () => sql(`select c.orders_count, a.street from dlv_customers c join dlv_customer_addresses a on a.customer_id = c.id where c.phone = '17999990001'`),
   (r: any[]) => r.length === 1 && r[0].orders_count === 1 || JSON.stringify(r));
 await ok("cliente acompanha pelo código", () => como("anon", null, () => um("select dlv_acompanhar_pedido($1)", [p1.codigo])),
-  (r: any) => r.status === "em_producao" && r.itens[0].opcoes.length === 3 && !("telefone" in r) || JSON.stringify(r));
+  (r: any) => r.status === "em_producao" && r.itens[0].opcoes.length === 2 && !("telefone" in r) || JSON.stringify(r));
 await recusa("código inventado não acha pedido", () => como("anon", null, () => um("select dlv_acompanhar_pedido($1)", ["0".repeat(32)])), "não encontrado");
 
 // ---------------------------------------------------------------- 6. estação de impressão
@@ -241,12 +363,12 @@ const jobs = await ok("estação reserva os 3 cupons", () => como("authenticated
 const cozinha = jobs?.find((j: any) => j.ponto.codigo === "cozinha");
 const cerveja = jobs?.find((j: any) => j.ponto.codigo === "cerveja");
 const via = jobs?.find((j: any) => j.tipo === "via_entrega");
-await ok("cozinha recebe o frango com empanado e batata, sem a coca", async () => cozinha,
-  (j: any) => j.itens.length === 1 && j.itens[0].nome === "Filé de Frango (Pequena)" && j.itens[0].opcoes.map((o: any) => o.nome).sort().join() === "Batata Frita,Empanado" || JSON.stringify(j?.itens));
+await ok("cozinha recebe o frango empanado com batata, sem a coca", async () => cozinha,
+  (j: any) => j.itens.length === 1 && j.itens[0].nome === "Filé de Frango Empanado (Pequena)" && j.itens[0].opcoes.map((o: any) => o.nome).sort().join() === "Batata Frita" || JSON.stringify(j?.itens));
 await ok("bar de cerveja recebe só a coca, 'junto com' o prato", async () => cerveja,
   (j: any) => j.itens.length === 1 && j.itens[0].nome === "Coca-Cola 200ml" && j.itens[0].observacao.includes("Filé de Frango") || JSON.stringify(j?.itens));
 await ok("via do caixa tem tudo, endereço, troco e link do mapa", async () => via,
-  (j: any) => j.itens[0].opcoes.length === 3 && j.pedido.troco_para_cents === 5000 && j.pedido.endereco.mapa_url.includes("google.com/maps") && j.ponto.ip === "192.168.0.70" || JSON.stringify(j?.pedido));
+  (j: any) => j.itens[0].opcoes.length === 2 && j.pedido.troco_para_cents === 5000 && j.pedido.endereco.mapa_url.includes("google.com/maps") && j.ponto.ip === "192.168.0.70" || JSON.stringify(j?.pedido));
 await ok("segunda estação não pega os mesmos cupons", () => como("authenticated", TERMINAL, () => um("select dlv_reservar_impressoes(10)")), (r: any[]) => r.length === 0 || `${r.length} cupons`);
 await ok("conclui cozinha e cerveja; via do caixa falha", async () => {
   await como("authenticated", TERMINAL, async () => {
@@ -357,12 +479,12 @@ await recusa("pedido com item esgotado é recusado", () => criar(pedido({ client
 await ok("mudanças ficam registradas com o valor antigo e o novo", () => sql("select field, old_value, new_value, by_name from dlv_menu_changes where target_id = $1 order by field", [agua.id]),
   (r: any[]) => r.length === 2 && r.some((x) => x.field === "preço" && x.old_value === "R$ 2,99" && x.new_value === "R$ 3,50") || JSON.stringify(r));
 await ok("pausar complemento tira ele do cardápio", async () => {
-  await como("authenticated", PAINEL, () => sql("select dlv_ajustar_opcao($1, true, null, null, 'Caixa')", [opcao(frango, "Escolhe seu Filé de Frango", "Empanado").id]));
+  await como("authenticated", PAINEL, () => sql("select dlv_ajustar_opcao($1, true, null, null, 'Caixa')", [opcao(frango, "Escolha o Acompanhamento", "Batata Frita").id]));
   const m = await como("anon", null, () => um("select dlv_cardapio_publico()"));
   const f = m.categorias.find((c: any) => c.nome === "Especiais de Frango").itens.find((i: any) => i.id === pratoFrango.id);
-  return f.tamanhos.find((t: any) => t.id === frango.id).grupos.find((g: any) => g.nome === "Escolhe seu Filé de Frango").opcoes.map((o: any) => o.nome);
-}, (n: string[]) => !n.includes("Empanado") || n.join(","));
-await recusa("pedido com complemento pausado é recusado", () => criar(pedido({ cliente: { nome: "Empanado", telefone: "17933330000" } })), "indisponível");
+  return f.tamanhos.find((t: any) => t.id === frango.id).grupos.find((g: any) => g.nome === "Escolha o Acompanhamento").opcoes.map((o: any) => o.nome);
+}, (n: string[]) => !n.includes("Batata Frita") && n.length === 3 || n.join(","));
+await recusa("pedido com complemento pausado é recusado", () => criar(pedido({ cliente: { nome: "Batata", telefone: "17933330000" } })), "indisponível");
 await ok("mudança sem diferença não gera registro", async () => {
   await como("authenticated", PAINEL, () => sql("select dlv_ajustar_item($1, null, true, 350, 'Caixa')", [agua.id]));
   return sql("select count(*)::int n from dlv_menu_changes where target_id = $1", [agua.id]);
@@ -370,7 +492,7 @@ await ok("mudança sem diferença não gera registro", async () => {
 
 // ---------------------------------------------------------------- 12. limite geral contra pedido falso em massa
 console.log("\n— Limite geral");
-await como("authenticated", PAINEL, () => sql("select dlv_ajustar_opcao($1, false, null, null, 'Caixa')", [opcao(frango, "Escolhe seu Filé de Frango", "Empanado").id]));
+await como("authenticated", PAINEL, () => sql("select dlv_ajustar_opcao($1, false, null, null, 'Caixa')", [opcao(frango, "Escolha o Acompanhamento", "Batata Frita").id]));
 const recentes = await um("select count(*)::int from dlv_orders where source = 'cardapio' and created_at > now() - interval '5 minutes'");
 await sql("UPDATE dlv_settings SET value = $1 WHERE key = 'max_orders_per_window'", [String(recentes + 1)]);
 await ok("dentro do limite: pedido passa", () => criar(pedido({ cliente: { nome: "Limite Um", telefone: "17922220001" } })), (r: any) => !!r.numero || JSON.stringify(r));
@@ -384,17 +506,17 @@ await sql("UPDATE dlv_settings SET value = '1000' WHERE key = 'max_orders_per_wi
 console.log("\n— Tamanhos");
 const menuT = await como("anon", null, () => um("select dlv_cardapio_publico()"));
 const pratoDe = (m: any, cat: string, nome: string) => m.categorias.find((c: any) => c.nome === cat)?.itens.find((i: any) => i.nome === nome);
-const frangoT = pratoDe(menuT, "Especiais de Frango", "Filé de Frango");
+const frangoT = pratoDe(menuT, "Especiais de Frango", "Filé de Frango Grelhado");
 const tam = (prato: any, nome: string) => prato.tamanhos.find((t: any) => t.nome === nome);
 const [fP, fM, fG] = ["Pequena", "Média", "Grande"].map((n) => tam(frangoT, n));
-const bifeT = pratoDe(menuT, "Especiais de Carne", "Bife");
+const bifeT = pratoDe(menuT, "Especiais de Carne", "Bife Acebolado");
 const [bP, bM] = ["Pequena", "Média"].map((n) => tam(bifeT, n));
 const batata = pratoDe(menuT, "Porções", "Batata Frita");
 
 await recusa("anônimo não lê tamanhos direto", () => como("anon", null, () => sql("select * from dlv_item_sizes")), "permission denied");
-await ok("painel lê os tamanhos", () => como("authenticated", PAINEL, () => sql("select id from dlv_item_sizes")), (r: any[]) => r.length === 30 || `${r.length}`);
+await ok("painel lê os tamanhos (30 dos tamanhos + 54 das variações)", () => como("authenticated", PAINEL, () => sql("select id from dlv_item_sizes")), (r: any[]) => r.length === 84 || `${r.length}`);
 await recusa("painel não escreve direto nos tamanhos", () => como("authenticated", PAINEL, () => sql("update dlv_item_sizes set price_cents = 1")), "permission denied");
-await ok("cardápio: 'Filé de Frango' com P/M/G, preço 'a partir de' R$ 23,90 e sem grupos no prato", async () => frangoT,
+await ok("cardápio: 'Filé de Frango Grelhado' com P/M/G, preço 'a partir de' R$ 23,90 e sem grupos no prato", async () => frangoT,
   (i: any) => i.tamanhos.map((t: any) => `${t.sigla}${t.preco_cents}`).join() === "P2390,M2690,G2990" && i.preco_cents === 2390 && i.grupos.length === 0 || JSON.stringify(i).slice(0, 400));
 await ok("cardápio: regras por tamanho (Pequena até 1 acompanhamento, Média até 2) e descrição da Média", async () => [fP, fM],
   ([p, m]: any) => grupo(p, "Escolha o Acompanhamento").max === 1 && grupo(m, "Escolha o Acompanhamento").max === 2
@@ -405,34 +527,34 @@ await ok("cardápio: item sem tamanho vem com 'tamanhos' vazio e grupos como ant
 const linhaT = (prato: any, t: any, opcoes: [string, string][], extra: any = {}) => ({
   item_id: prato.id, tamanho_id: t?.id, quantidade: 1, opcoes: opcoes.map(([g, n]) => ({ opcao_id: opcao(t, g, n).id })), ...extra });
 const pedidoT = (tel: string, itens: any[]) => pedido({ modo: "retirada", cliente: { nome: "Tamanho", telefone: tel }, pagamento: { forma: "credito" }, itens });
-const opcFrango: [string, string][] = [["Escolhe seu Filé de Frango", "Grelhado"], ["Escolha o Acompanhamento", "Macarrão"]];
+const opcFrango: [string, string][] = [["Escolha o Acompanhamento", "Macarrão"]];
 
-await recusa("prato com tamanho sem escolher tamanho é recusado", () => criar(pedidoT("17900000001", [{ ...linhaT(frangoT, fP, opcFrango), tamanho_id: undefined }])), 'Escolha o tamanho de "Filé de Frango"');
+await recusa("prato com tamanho sem escolher tamanho é recusado", () => criar(pedidoT("17900000001", [{ ...linhaT(frangoT, fP, opcFrango), tamanho_id: undefined }])), 'Escolha o tamanho de "Filé de Frango Grelhado"');
 await recusa("tamanho de outro prato é recusado", () => criar(pedidoT("17900000001", [{ ...linhaT(frangoT, fP, opcFrango), tamanho_id: bP.id }])), "Tamanho inválido");
 await recusa("tamanho que não é código válido é recusado", () => criar(pedidoT("17900000001", [{ ...linhaT(frangoT, fP, opcFrango), tamanho_id: "grande" }])), "Tamanho inválido");
-await recusa("complemento de outro prato não vale no tamanho", () => criar(pedidoT("17900000001", [
-  { ...linhaT(frangoT, fP, opcFrango), opcoes: [...linhaT(frangoT, fP, opcFrango).opcoes, { opcao_id: opcao(bP, "Escolha Sua Carne", "Acebolado").id }] }])), "Complemento inválido");
-await recusa("Filé de Frango Pequena com 2 acompanhamentos: máximo 1", () => criar(pedidoT("17900000001", [
+await recusa("complemento de outro prato não vale no tamanho", async () => criar(pedidoT("17900000001", [
+  { ...linhaT(frangoT, fP, opcFrango), opcoes: [...linhaT(frangoT, fP, opcFrango).opcoes, { opcao_id: await opcaoNome("Deseja turbinar a feijoada?", "Torresmo 100g") }] }])), "Complemento inválido");
+await recusa("Filé de Frango Grelhado Pequena com 2 acompanhamentos: máximo 1", () => criar(pedidoT("17900000001", [
   linhaT(frangoT, fP, [...opcFrango, ["Escolha o Acompanhamento", "Farofa"]])])), "no máximo 1");
-await recusa("Bife Pequena sem acompanhamento: exige 1", () => criar(pedidoT("17900000001", [linhaT(bifeT, bP, [["Escolha Sua Carne", "Acebolado"]])])), "pelo menos 1");
-await recusa("Bife Média com 1 acompanhamento: exige 2", () => criar(pedidoT("17900000001", [
-  linhaT(bifeT, bM, [["Escolha Sua Carne", "Acebolado"], ["Escolha o Acompanhamento", "Macarrão"]])])), 'Em "Bife (Média)", escolha pelo menos 2');
-await ok("Bife Média com 2 acompanhamentos passa, com o preço da Média", () => criar(pedidoT("17900000002", [
-  linhaT(bifeT, bM, [["Escolha Sua Carne", "Acebolado"], ["Escolha o Acompanhamento", "Macarrão"], ["Escolha o Acompanhamento", "Farofa"]])])),
+await recusa("Bife Acebolado Pequena sem acompanhamento: exige 1", () => criar(pedidoT("17900000001", [linhaT(bifeT, bP, [])])), "pelo menos 1");
+await recusa("Bife Acebolado Média com 1 acompanhamento: exige 2", () => criar(pedidoT("17900000001", [
+  linhaT(bifeT, bM, [["Escolha o Acompanhamento", "Macarrão"]])])), 'Em "Bife Acebolado (Média)", escolha pelo menos 2');
+await ok("Bife Acebolado Média com 2 acompanhamentos passa, com o preço da Média", () => criar(pedidoT("17900000002", [
+  linhaT(bifeT, bM, [["Escolha o Acompanhamento", "Macarrão"], ["Escolha o Acompanhamento", "Farofa"]])])),
   (r: any) => r.subtotal_cents === 2790 || JSON.stringify(r));
-const pM = await ok("Filé de Frango Média com 2 acompanhamentos e coca: 26,90 + 3,50", () => criar(pedidoT("17900000003", [
+const pM = await ok("Filé de Frango Grelhado Média com 2 acompanhamentos e coca: 26,90 + 3,50", () => criar(pedidoT("17900000003", [
   linhaT(frangoT, fM, [...opcFrango, ["Escolha o Acompanhamento", "Farofa"], ["Bebidas", "Coca-Cola 200ml"]], { preco_cents: 1 })])),
   (r: any) => r.subtotal_cents === 3040 || JSON.stringify(r));
-await ok("item do pedido congela 'Filé de Frango (Média)' e guarda o tamanho", () => sql("select item_name, size_name, size_id from dlv_order_items where order_id = $1", [pM.pedido_id]),
-  (r: any[]) => r.length === 1 && r[0].item_name === "Filé de Frango (Média)" && r[0].size_name === "Média" && r[0].size_id === fM.id || JSON.stringify(r));
-await ok("cupom da cozinha, do bar e via do caixa mostram 'Filé de Frango (Média)'", () => sql(
+await ok("item do pedido congela 'Filé de Frango Grelhado (Média)' e guarda o tamanho", () => sql("select item_name, size_name, size_id from dlv_order_items where order_id = $1", [pM.pedido_id]),
+  (r: any[]) => r.length === 1 && r[0].item_name === "Filé de Frango Grelhado (Média)" && r[0].size_name === "Média" && r[0].size_id === fM.id || JSON.stringify(r));
+await ok("cupom da cozinha, do bar e via do caixa mostram 'Filé de Frango Grelhado (Média)'", () => sql(
   "select j.kind, pp.code, dlv__conteudo_impressao(j.id) c from dlv_print_jobs j join pdv_production_points pp on pp.id = j.production_point_id where j.order_id = $1 order by pp.code", [pM.pedido_id]),
   (r: any[]) => r.length === 3
-    && r.find((x) => x.code === "cozinha").c.itens[0].nome === "Filé de Frango (Média)"
-    && r.find((x) => x.code === "cerveja").c.itens[0].observacao === "junto com Filé de Frango (Média)"
-    && r.find((x) => x.kind === "via_entrega").c.itens[0].nome === "Filé de Frango (Média)" || JSON.stringify(r).slice(0, 500));
-await ok("cliente acompanha com 'Filé de Frango (Média)'", () => como("anon", null, () => um("select dlv_acompanhar_pedido($1)", [pM.codigo])),
-  (r: any) => r.itens[0].nome === "Filé de Frango (Média)" || JSON.stringify(r.itens));
+    && r.find((x) => x.code === "cozinha").c.itens[0].nome === "Filé de Frango Grelhado (Média)"
+    && r.find((x) => x.code === "cerveja").c.itens[0].observacao === "junto com Filé de Frango Grelhado (Média)"
+    && r.find((x) => x.kind === "via_entrega").c.itens[0].nome === "Filé de Frango Grelhado (Média)" || JSON.stringify(r).slice(0, 500));
+await ok("cliente acompanha com 'Filé de Frango Grelhado (Média)'", () => como("anon", null, () => um("select dlv_acompanhar_pedido($1)", [pM.codigo])),
+  (r: any) => r.itens[0].nome === "Filé de Frango Grelhado (Média)" || JSON.stringify(r.itens));
 await ok("item sem tamanho (Batata Frita porção) continua funcionando", async () => {
   const r = await criar(pedidoT("17900000004", [{ item_id: batata.id, quantidade: 1 }]));
   return sql("select o.subtotal_cents, oi.item_name, oi.size_id from dlv_orders o join dlv_order_items oi on oi.order_id = o.id where o.id = $1", [r.pedido_id]);
@@ -444,33 +566,33 @@ await recusa("logado sem painel não ajusta tamanho", () => como("authenticated"
 await recusa("ajustar tamanho que não existe", () => como("authenticated", PAINEL, () => sql("select dlv_ajustar_tamanho(gen_random_uuid(), true, null, null, 'Caixa')")), "Tamanho não encontrado");
 await ok("pausar a Grande tira só esse tamanho do cardápio", async () => {
   await como("authenticated", PAINEL, () => sql("select dlv_ajustar_tamanho($1, true, null, null, 'Caixa')", [fG.id]));
-  return pratoDe(await como("anon", null, () => um("select dlv_cardapio_publico()")), "Especiais de Frango", "Filé de Frango");
+  return pratoDe(await como("anon", null, () => um("select dlv_cardapio_publico()")), "Especiais de Frango", "Filé de Frango Grelhado");
 }, (i: any) => i.tamanhos.map((t: any) => t.sigla).join() === "P,M" || JSON.stringify(i?.tamanhos));
-await recusa("pedido com tamanho pausado é recusado", () => criar(pedidoT("17900000006", [linhaT(frangoT, fG, [...opcFrango])])), 'Filé de Frango (Grande)" não está disponível');
+await recusa("pedido com tamanho pausado é recusado", () => criar(pedidoT("17900000006", [linhaT(frangoT, fG, [...opcFrango])])), 'Filé de Frango Grelhado (Grande)" não está disponível');
 await ok("esgotar a Média: aparece esgotada no cardápio", async () => {
   await como("authenticated", PAINEL, () => sql("select dlv_ajustar_tamanho($1, null, true, null, 'Caixa')", [fM.id]));
-  return tam(pratoDe(await como("anon", null, () => um("select dlv_cardapio_publico()")), "Especiais de Frango", "Filé de Frango"), "Média");
+  return tam(pratoDe(await como("anon", null, () => um("select dlv_cardapio_publico()")), "Especiais de Frango", "Filé de Frango Grelhado"), "Média");
 }, (t: any) => t.esgotado === true || JSON.stringify(t));
 await recusa("pedido com tamanho esgotado é recusado", () => criar(pedidoT("17900000006", [linhaT(frangoT, fM, [...opcFrango, ["Escolha o Acompanhamento", "Farofa"]])])), "esgotado");
 await ok("preço da Pequena muda e o 'a partir de' acompanha", async () => {
   await como("authenticated", PAINEL, () => sql("select dlv_ajustar_tamanho($1, null, null, 2490, 'Caixa')", [fP.id]));
-  const i = pratoDe(await como("anon", null, () => um("select dlv_cardapio_publico()")), "Especiais de Frango", "Filé de Frango");
+  const i = pratoDe(await como("anon", null, () => um("select dlv_cardapio_publico()")), "Especiais de Frango", "Filé de Frango Grelhado");
   const r = await criar(pedidoT("17900000007", [linhaT(frangoT, fP, opcFrango)]));
   return { item: i.preco_cents, p: tam(i, "Pequena").preco_cents, pedido: r.subtotal_cents };
 }, (x: any) => x.item === 2490 && x.p === 2490 && x.pedido === 2490 || JSON.stringify(x));
 await ok("histórico registra as mudanças de tamanho (quem, de quanto para quanto)", () => sql(
   "select target_name, field, old_value, new_value, by_name from dlv_menu_changes where target = 'tamanho' order by created_at, field"),
   (r: any[]) => r.length === 3
-    && r.some((x) => x.target_name === "Filé de Frango (Grande)" && x.field === "pausado" && x.old_value === "false" && x.new_value === "true")
-    && r.some((x) => x.target_name === "Filé de Frango (Média)" && x.field === "esgotado")
-    && r.some((x) => x.target_name === "Filé de Frango (Pequena)" && x.field === "preço" && x.old_value === "R$ 23,90" && x.new_value === "R$ 24,90" && x.by_name === "Caixa")
+    && r.some((x) => x.target_name === "Filé de Frango Grelhado (Grande)" && x.field === "pausado" && x.old_value === "false" && x.new_value === "true")
+    && r.some((x) => x.target_name === "Filé de Frango Grelhado (Média)" && x.field === "esgotado")
+    && r.some((x) => x.target_name === "Filé de Frango Grelhado (Pequena)" && x.field === "preço" && x.old_value === "R$ 23,90" && x.new_value === "R$ 24,90" && x.by_name === "Caixa")
     || JSON.stringify(r));
 await ok("todos os tamanhos pausados: o prato some do cardápio", async () => {
   await como("authenticated", PAINEL, async () => {
     await sql("select dlv_ajustar_tamanho($1, true, null, null, 'Caixa')", [fP.id]);
     await sql("select dlv_ajustar_tamanho($1, true, null, null, 'Caixa')", [fM.id]);
   });
-  return pratoDe(await como("anon", null, () => um("select dlv_cardapio_publico()")), "Especiais de Frango", "Filé de Frango");
+  return pratoDe(await como("anon", null, () => um("select dlv_cardapio_publico()")), "Especiais de Frango", "Filé de Frango Grelhado");
 }, (i: any) => i === undefined || JSON.stringify(i).slice(0, 200));
 
 // ---------------------------------------------------------------- situação da loja, leitura leve (migration dlv_status_loja)
@@ -489,6 +611,34 @@ await ok("loja forçada fechada aparece fechada", async () => {
   await sql("UPDATE dlv_settings SET value = $1 WHERE key = 'store_mode'", [antes]);
   return r;
 }, (r: any) => r.aberta === false && r.modo === "fechada" || JSON.stringify(r));
+
+// ---------------------------------------------------------------- 14. um prato por variação (migration dlv_variacoes)
+console.log("\n— Um prato por variação");
+const menuV = await como("anon", null, () => um("select dlv_cardapio_publico()"));
+const nomesVariacao = ["Escolha Sua Carne", "Escolha Seu Strogonoff", "Escolhe seu Filé de Frango", "Escolha seu Filé de Tilápia", "Escolha Sua Parmegiana"];
+await ok("cardápio público não mostra nenhum grupo de variação", async () => JSON.stringify(menuV),
+  (s: string) => nomesVariacao.every((n) => !s.includes(`"${n}"`)) || "achou grupo de variação");
+const empanadoV = pratoDe(menuV, "Especiais de Frango", "Filé de Frango Empanado");
+await ok("cardápio: 'Filé de Frango Empanado' P/M/G com o adicional embutido e só os complementos que continuam", async () => empanadoV,
+  (i: any) => i.tamanhos.map((t: any) => `${t.sigla}${t.preco_cents}`).join() === "P2590,M2890,G3190" && i.preco_cents === 2590 && i.grupos.length === 0
+    && i.tamanhos.every((t: any) => t.grupos.map((g: any) => g.nome).join() === "Escolha o Acompanhamento,+ Proteína,Bebidas") || JSON.stringify(i).slice(0, 400));
+const empM = tam(empanadoV, "Média");
+const opcEmpM: [string, string][] = [["Escolha o Acompanhamento", "Macarrão"], ["Escolha o Acompanhamento", "Farofa"]];
+const pEmp = await ok("pedido 'Filé de Frango Empanado (Média)' com 2 acompanhamentos: 28,90", () => criar(pedidoT("17890000001", [linhaT(empanadoV, empM, opcEmpM)])),
+  (r: any) => r.subtotal_cents === 2890 || JSON.stringify(r));
+await ok("item do pedido sai 'Filé de Frango Empanado (Média)', sem complemento de variação", () => sql(
+  `select oi.item_name, oi.size_name, oi.unit_price_cents,
+          (select string_agg(x.option_name, ',' order by x.option_name) from dlv_order_item_options x where x.order_item_id = oi.id) opcoes
+     from dlv_order_items oi where oi.order_id = $1`, [pEmp.pedido_id]),
+  (r: any[]) => r.length === 1 && r[0].item_name === "Filé de Frango Empanado (Média)" && r[0].size_name === "Média" && r[0].unit_price_cents === 2890 && r[0].opcoes === "Farofa,Macarrão" || JSON.stringify(r));
+await recusa("mandar a opção 'Empanado' do grupo de variação no prato novo é recusado", () => criar(pedidoT("17890000002", [
+  { ...linhaT(empanadoV, empM, opcEmpM), opcoes: [...linhaT(empanadoV, empM, opcEmpM).opcoes, { opcao_id: ids.empanado }] }])), "Complemento inválido");
+await recusa("prato original (inativo) não aceita pedido novo", () => criar(pedidoT("17890000002", [
+  { item_id: frango0.id, tamanho_id: tam0(frango0, "Média").id, quantidade: 1, opcoes: [] }])), "não existe mais");
+const cavaloV = pratoDe(menuV, "Especiais de Carne", "Bife a Cavalo");
+await ok("pedido 'Bife a Cavalo (Pequena)': 26,90 = Bife 24,90 + 2,00", () => criar(pedidoT("17890000003", [
+  linhaT(cavaloV, tam(cavaloV, "Pequena"), [["Escolha o Acompanhamento", "Farofa"]])])),
+  (r: any) => r.subtotal_cents === 2690 || JSON.stringify(r));
 
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
