@@ -442,11 +442,12 @@ await ok("pagou depois do prazo: pedido volta e vai para produção", () => como
 
 // ---------------------------------------------------------------- 10. limites e painel
 console.log("\n— Limites e painel");
-await ok("3 pedidos em andamento no mesmo telefone passam", async () => {
-  for (let i = 0; i < 3; i++) await criar(pedido({ cliente: { nome: "Trote", telefone: "17988880000" } }));
+// limite 5 desde 20260916120000 (antes 3); o detalhe da regra nova está na seção "Limite por telefone"
+await ok("5 pedidos em andamento no mesmo telefone passam", async () => {
+  for (let i = 0; i < 5; i++) await criar(pedido({ cliente: { nome: "Trote", telefone: "17988880000" } }));
   return true;
 });
-await recusa("4º pedido em andamento no mesmo telefone é barrado", () => criar(pedido({ cliente: { nome: "Trote", telefone: "17988880000" } })), "em andamento");
+await recusa("6º pedido em andamento no mesmo telefone é barrado",() => criar(pedido({ cliente: { nome: "Trote", telefone: "17988880000" } })), "em andamento");
 await sql("UPDATE dlv_settings SET value = 'fechada' WHERE key = 'store_mode'");
 await ok("painel lança pedido por telefone com a loja fechada (retirada, Pix na entrega)", () => como("authenticated", PAINEL, () => um("select dlv_criar_pedido_painel($1, 'Caixa')", [JSON.stringify({
   modo: "retirada", cliente: { nome: "Balcão", telefone: "17977770000" }, pagamento: { forma: "pix_entrega" }, itens: [linhaFrango()] })])),
@@ -1053,6 +1054,59 @@ await recusa("tentativa em pedido Pix online antigo é recusada", () => tentativ
 await recusa("tentativa em pedido que não existe é recusada", () => tentativa("00000000-0000-0000-0000-00000000abcd"), "Pedido não está aguardando pagamento online");
 await ok("recusas por situação não incrementaram", async () => [await tentativasDb(tr1.pedido_id), await tentativasDb(ce.pedido_id), await tentativasDb(trDinheiro.pedido_id), await tentativasDb(trPix.pedido_id)],
   (r: number[]) => r.join() === "0,0,0,0" || r.join());
+
+// ---------------------------------------------------------------- limite de pedidos em andamento por telefone (20260916120000)
+console.log("\n— Limite por telefone");
+const TROTE = "Já existem pedidos em andamento para este telefone. Aguarde ou fale com a loja.";
+const naEntrega = (tel: string) => pedido({ cliente: { nome: "Limite Teste", telefone: tel } });
+const emAndamento = (tel: string) => sql(`select count(*)::int n, count(*) filter (where paid_at is not null)::int pagos from dlv_orders
+  where customer_phone = $1 and status in ('aguardando_pagamento', 'em_analise', 'em_producao', 'pronto', 'saiu_entrega')`, [tel]);
+
+await ok("configuração max_open_orders_per_phone = 5", () => um("select value from dlv_settings where key = 'max_open_orders_per_phone'"), (v: string) => v === "5" || v);
+
+await ok("4 pedidos em andamento para pagar na entrega passam", async () => {
+  const r = []; for (let i = 0; i < 4; i++) r.push((await criar(naEntrega("17840000001"))).status); return r;
+}, (r: string[]) => r.join() === "em_producao,em_producao,em_producao,em_producao" || r.join());
+await ok("5º pedido para pagar na entrega passa", () => criar(naEntrega("17840000001")), (r: any) => r.status === "em_producao" || JSON.stringify(r));
+await recusa("6º pedido é recusado", () => criar(naEntrega("17840000001")), TROTE);
+await ok("recusa não gravou pedido: continuam 5 em andamento", () => emAndamento("17840000001"), (r: any[]) => r[0].n === 5 || JSON.stringify(r));
+
+await ok("pedidos online pagos não contam: 6 pagos + 4 abertos ainda deixa criar o 5º aberto", async () => {
+  for (let i = 0; i < 6; i++) {
+    const o = await criar(pedidoOnline("17840000002"));
+    const c = await confirmarOnline(o.pedido_id, `mp-limite-${i}`, o.total_cents, "pix");
+    if (c.status !== "em_producao") throw new Error("pagamento não confirmou: " + JSON.stringify(c));
+  }
+  for (let i = 0; i < 4; i++) await criar(naEntrega("17840000002"));
+  const quinto = await criar(naEntrega("17840000002"));
+  return { quinto: quinto.status, andamento: (await emAndamento("17840000002"))[0] };
+}, (x: any) => x.quinto === "em_producao" && x.andamento.n === 11 && x.andamento.pagos === 6 || JSON.stringify(x));
+await recusa("com 6 pagos + 5 abertos, o próximo é recusado", () => criar(naEntrega("17840000002")), TROTE);
+
+await ok("pedido online aguardando pagamento conta: 4 na entrega + 1 online sem pagar", async () => {
+  for (let i = 0; i < 4; i++) await criar(naEntrega("17840000003"));
+  const on = await criar(pedidoOnline("17840000003"));
+  return { status: on.status, andamento: (await emAndamento("17840000003"))[0] };
+}, (x: any) => x.status === "aguardando_pagamento" && x.andamento.n === 5 && x.andamento.pagos === 0 || JSON.stringify(x));
+await recusa("6º pedido (com o online sem pagar contando) é recusado", () => criar(naEntrega("17840000003")), TROTE);
+await recusa("5 online aguardando pagamento também barram o 6º", async () => {
+  for (let i = 0; i < 5; i++) await criar(pedidoOnline("17840000004"));
+  return criar(pedidoOnline("17840000004"));
+}, TROTE);
+
+await ok("painel continua sem limite: lança mais 3 para o telefone que já tem 5 abertos", async () => {
+  const r = [];
+  for (let i = 0; i < 3; i++) r.push((await como("authenticated", PAINEL, () => um("select dlv_criar_pedido_painel($1, 'Caixa')", [JSON.stringify(naEntrega("17840000001"))]))).status);
+  return { r, andamento: (await emAndamento("17840000001"))[0] };
+}, (x: any) => x.r.join() === "em_producao,em_producao,em_producao" && x.andamento.n === 8 || JSON.stringify(x));
+
+await ok("rodar a migration do limite de novo é recusado e não grava nada", async () => {
+  const antes = await um("select md5(pg_get_functiondef('public.dlv__criar_pedido(jsonb, text, text)'::regprocedure))");
+  let erro = "";
+  try { await db.exec(readFileSync(`${DIR}/20260916120000_dlv_limite_por_telefone.sql`, "utf8")); } catch (e: any) { erro = e.message; } finally { await db.exec("ROLLBACK"); }
+  const depois = await um("select md5(pg_get_functiondef('public.dlv__criar_pedido(jsonb, text, text)'::regprocedure))");
+  return { erro, igual: antes === depois };
+}, (x: any) => x.erro.includes("achei 0") && x.igual || JSON.stringify(x));
 
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
