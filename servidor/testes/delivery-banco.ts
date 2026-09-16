@@ -1108,5 +1108,137 @@ await ok("rodar a migration do limite de novo é recusado e não grava nada", as
   return { erro, igual: antes === depois };
 }, (x: any) => x.erro.includes("achei 0") && x.igual || JSON.stringify(x));
 
+// ---------------------------------------------------------------- trocar pagamento online por pagamento na entrega (20260916140000)
+console.log("\n— Trocar para pagar na entrega");
+const trocar = (id: string, forma: string | null, troco: number | null) =>
+  como("service_role", null, () => um("select dlv_trocar_para_pagamento_na_entrega($1, $2, $3)", [id, forma, troco]));
+const trocaDb = async (id: string) => (await sql(`select status, payment_method, change_for_cents, paid_at is not null as pago, accepted_at is not null as aceito,
+  pix_expires_at, mp_payment_id, mp_payment_type, pix_copy_paste, mp_preference_id, mp_checkout_url from dlv_orders where id = $1`, [id]))[0];
+const NAO_TROCA = "Este pedido não pode mais trocar a forma de pagamento";
+const semOnline = (o: any) => o.pix_expires_at === null && o.mp_payment_id === null && o.mp_payment_type === null
+  && o.pix_copy_paste === null && o.mp_preference_id === null && o.mp_checkout_url === null;
+
+await recusa("anônimo não executa dlv_trocar_para_pagamento_na_entrega", () => como("anon", null, () => sql("select dlv_trocar_para_pagamento_na_entrega(gen_random_uuid(), 'dinheiro', null)")), "permission denied");
+await recusa("logado sem painel não executa dlv_trocar_para_pagamento_na_entrega", () => como("authenticated", ESTRANHO, () => sql("select dlv_trocar_para_pagamento_na_entrega(gen_random_uuid(), 'dinheiro', null)")), "permission denied");
+await recusa("usuário do painel não executa dlv_trocar_para_pagamento_na_entrega", () => como("authenticated", PAINEL, () => sql("select dlv_trocar_para_pagamento_na_entrega(gen_random_uuid(), 'dinheiro', null)")), "permission denied");
+await ok("anônimo continua executando só as 5 funções públicas do delivery", () => sql(`select string_agg(p.proname, ',' order by p.proname) f from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and left(p.proname, 4) = 'dlv_' and has_function_privilege('anon', p.oid, 'EXECUTE')`),
+  (r: any[]) => r[0].f === "dlv_acompanhar_pedido,dlv_cardapio_publico,dlv_consultar_entrega,dlv_criar_pedido,dlv_status_loja" || r[0].f);
+
+// online → dinheiro com troco, com aceite automático
+await sql("UPDATE dlv_settings SET value = 'true' WHERE key = 'auto_accept'");
+const tc1 = await criar(pedidoOnline("17830000001"));
+await registrarCheckout(tc1.pedido_id, "pref-troca-1", "https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-troca-1");
+await registrarPagamento(tc1.pedido_id, "mp-troca-1", "pix", PIX1);
+await ok("online → dinheiro com troco de R$ 50: devolve número, em_producao e forma", () => trocar(tc1.pedido_id, "dinheiro", 5000),
+  (r: any) => Object.keys(r).sort().join() === "forma,numero,status" && r.numero === tc1.numero && r.status === "em_producao" && r.forma === "dinheiro" || JSON.stringify(r));
+await ok("gravou dinheiro com troco, limpou os dados do pagamento online, aceitou e gerou os 3 cupons", async () => ({
+  o: await trocaDb(tc1.pedido_id), c: await cuponsDe(tc1.pedido_id),
+  ev: await sql("select from_status, to_status, by_name, note from dlv_order_events where order_id = $1 order by created_at, id", [tc1.pedido_id]) }),
+  (x: any) => x.o.status === "em_producao" && x.o.payment_method === "dinheiro" && Number(x.o.change_for_cents) === 5000 && !x.o.pago && x.o.aceito
+    && semOnline(x.o) && x.c === 3
+    && x.ev.some((e: any) => e.from_status === "aguardando_pagamento" && e.to_status === "em_analise" && e.by_name === "cliente" && e.note === "Cliente trocou para pagar na entrega (dinheiro)")
+    && x.ev.some((e: any) => e.from_status === "em_analise" && e.to_status === "em_producao" && e.by_name === "aceite automático") || JSON.stringify(x));
+await ok("cliente acompanha: pagamento dinheiro, troco, sem link nem prazo", () => acompanhar(tc1.codigo),
+  (r: any) => r.status === "em_producao" && r.pagamento === "dinheiro" && Number(r.troco_para_cents) === 5000 && r.pago === false
+    && r.pagamento_link === null && r.pagamento_expira_em === null && r.pix_copia_cola === null || JSON.stringify(r));
+await ok("estação recebe os 3 cupons com pagamento='dinheiro', troco e mp_payment_type null", async () =>
+  (await esvaziarFila()).filter((j: any) => j.pedido.numero === tc1.numero),
+  (r: any[]) => r.length === 3 && r.every((j) => j.pedido.pagamento === "dinheiro" && Number(j.pedido.troco_para_cents) === 5000
+    && j.pedido.pago === false && j.pedido.mp_payment_type === null) || JSON.stringify(r.map((j: any) => j.pedido)));
+
+// online → crédito (troco informado é ignorado)
+const tc2 = await criar(pedidoOnline("17830000002"));
+await ok("online → crédito com troco informado: troco vira null, vai para produção", async () => ({
+  r: await trocar(tc2.pedido_id, "credito", 5000), o: await trocaDb(tc2.pedido_id), c: await cuponsDe(tc2.pedido_id),
+  ev: await eventosCom(tc2.pedido_id, "Cliente trocou para pagar na entrega (credito)") }),
+  (x: any) => x.r.status === "em_producao" && x.r.forma === "credito" && x.o.payment_method === "credito" && x.o.change_for_cents === null
+    && semOnline(x.o) && x.c === 3 && x.ev === 1 || JSON.stringify(x));
+await recusa("a tabela continua barrando troco em pedido no crédito", () => sql("update dlv_orders set change_for_cents = 5000 where id = $1", [tc2.pedido_id]), "check constraint");
+const tc3 = await criar(pedidoOnline("17830000003"));
+await ok("online → dinheiro com troco igual ao total passa", () => trocar(tc3.pedido_id, "dinheiro", 2940),
+  (r: any) => r.status === "em_producao" && r.forma === "dinheiro" || JSON.stringify(r));
+
+// sem aceite automático
+await sql("UPDATE dlv_settings SET value = 'false' WHERE key = 'auto_accept'");
+const tc4 = await criar(pedidoOnline("17830000004"));
+await ok("sem aceite automático: online → débito fica em análise e não imprime", async () => ({
+  r: await trocar(tc4.pedido_id, "debito", null), o: await trocaDb(tc4.pedido_id), c: await cuponsDe(tc4.pedido_id) }),
+  (x: any) => x.r.status === "em_analise" && x.r.forma === "debito" && x.o.status === "em_analise" && x.o.payment_method === "debito"
+    && !x.o.aceito && x.c === 0 || JSON.stringify(x));
+await ok("painel aceita o pedido trocado normalmente (gera os cupons)", async () => {
+  await como("authenticated", PAINEL, () => sql("select dlv_avancar_pedido($1, 'em_producao', 'Caixa')", [tc4.pedido_id]));
+  return { o: await trocaDb(tc4.pedido_id), c: await cuponsDe(tc4.pedido_id) };
+}, (x: any) => x.o.status === "em_producao" && x.o.aceito && x.c === 3 || JSON.stringify(x));
+await sql("UPDATE dlv_settings SET value = 'true' WHERE key = 'auto_accept'");
+
+// recusas
+const tc5 = await criar(pedidoOnline("17830000005"));
+await registrarPagamento(tc5.pedido_id, "mp-troca-5", "pix", PIX1);
+const tcAnalise = await criar(pedidoOnline("17830000006"));
+await sql("UPDATE dlv_settings SET value = 'false' WHERE key = 'auto_accept'");
+await trocar(tcAnalise.pedido_id, "debito", null);
+await sql("UPDATE dlv_settings SET value = 'true' WHERE key = 'auto_accept'");
+const tcVencido = await criar(pedidoOnline("17830000007"));
+await sql("update dlv_orders set pix_expires_at = now() - interval '1 minute' where id = $1", [tcVencido.pedido_id]);
+
+await recusa("pedido online já pago é recusado", () => trocar(tr1.pedido_id, "dinheiro", null), NAO_TROCA);
+await recusa("pedido online cancelado pela loja é recusado", () => trocar(trCancelado.pedido_id, "dinheiro", null), NAO_TROCA);
+await recusa("pedido online vencido (cancela sozinho antes) é recusado", () => trocar(tcVencido.pedido_id, "dinheiro", null), NAO_TROCA);
+await recusa("pedido em dinheiro (não é online) é recusado", () => trocar(trDinheiro.pedido_id, "credito", null), NAO_TROCA);
+await recusa("pedido Pix online antigo aguardando (não é 'online') é recusado", () => trocar(trPix.pedido_id, "dinheiro", null), NAO_TROCA);
+await recusa("pedido que já trocou e está em análise é recusado", () => trocar(tcAnalise.pedido_id, "credito", null), NAO_TROCA);
+await recusa("pedido que não existe é recusado", () => trocar("00000000-0000-0000-0000-00000000abcd", "dinheiro", null), NAO_TROCA);
+await recusa("forma 'pix_entrega' é recusada", () => trocar(tc5.pedido_id, "pix_entrega", null), "Escolha a forma de pagamento");
+await recusa("forma 'online' é recusada", () => trocar(tc5.pedido_id, "online", null), "Escolha a forma de pagamento");
+await recusa("forma 'pix_online' é recusada", () => trocar(tc5.pedido_id, "pix_online", null), "Escolha a forma de pagamento");
+await recusa("forma nula é recusada", () => trocar(tc5.pedido_id, null, null), "Escolha a forma de pagamento");
+await recusa("troco menor que o total é recusado (mesma mensagem do pedido)", () => trocar(tc5.pedido_id, "dinheiro", 2939), "O troco precisa ser para um valor maior que o total");
+await ok("recusas não gravaram nada: continuam como estavam, sem evento de troca", async () => ({
+  t5: await trocaDb(tc5.pedido_id), analise: await trocaDb(tcAnalise.pedido_id), vencido: await trocaDb(tcVencido.pedido_id),
+  pago: await trocaDb(tr1.pedido_id), din: await trocaDb(trDinheiro.pedido_id), pix: await trocaDb(trPix.pedido_id),
+  ev: await um("select count(*)::int from dlv_order_events where order_id = any($1::uuid[]) and note like 'Cliente trocou%'",
+    [[tc5.pedido_id, tcVencido.pedido_id, tr1.pedido_id, trDinheiro.pedido_id, trPix.pedido_id, trCancelado.pedido_id]]),
+  c5: await cuponsDe(tc5.pedido_id) }),
+  (x: any) => x.t5.status === "aguardando_pagamento" && x.t5.payment_method === "online" && x.t5.mp_payment_id === "mp-troca-5" && x.t5.pix_copy_paste === PIX1
+    && x.t5.pix_expires_at !== null && x.c5 === 0
+    && x.analise.status === "em_analise" && x.analise.payment_method === "debito"
+    && x.vencido.status === "aguardando_pagamento" && x.vencido.payment_method === "online" && x.vencido.pix_expires_at !== null
+    && x.pago.payment_method === "online" && x.pago.pago && x.din.payment_method === "dinheiro"
+    && x.pix.payment_method === "pix_online" && x.pix.status === "aguardando_pagamento" && x.ev === 0 || JSON.stringify(x));
+await ok("pedido vencido: a recusa desfaz tudo na chamada; a próxima leitura cancela (pix_expirado)", () => acompanhar(tcVencido.codigo),
+  (r: any) => r.status === "cancelado" && r.cancelamento === "pix_expirado" && r.pagamento === "online" || JSON.stringify(r));
+await ok("depois das recusas, o mesmo pedido troca normalmente", () => trocar(tc5.pedido_id, "dinheiro", 3000),
+  (r: any) => r.status === "em_producao" && r.forma === "dinheiro" || JSON.stringify(r));
+
+// trava por telefone
+await ok("trava por telefone não conta o próprio pedido: 4 na entrega + este online troca", async () => {
+  for (let i = 0; i < 4; i++) await criar(naEntrega("17830000010"));
+  const on = await criar(pedidoOnline("17830000010"));
+  return { r: await trocar(on.pedido_id, "dinheiro", null), andamento: (await emAndamento("17830000010"))[0] };
+}, (x: any) => x.r.status === "em_producao" && x.andamento.n === 5 || JSON.stringify(x));
+
+const travaPago = await criar(pedidoOnline("17830000011"));
+await confirmarOnline(travaPago.pedido_id, "mp-troca-trava", travaPago.total_cents, "pix");
+const travaAbertos = [];
+for (let i = 0; i < 4; i++) travaAbertos.push(await criar(naEntrega("17830000011")));
+const travaOnline = await criar(pedidoOnline("17830000011"));
+await como("authenticated", PAINEL, () => um("select dlv_criar_pedido_painel($1, 'Caixa')", [JSON.stringify(naEntrega("17830000011"))]));
+await recusa("com 5 OUTROS pedidos abertos sem pagar no telefone, a troca é recusada", () => trocar(travaOnline.pedido_id, "dinheiro", null), TROTE);
+await ok("recusa pela trava não mexeu no pedido", () => trocaDb(travaOnline.pedido_id),
+  (o: any) => o.status === "aguardando_pagamento" && o.payment_method === "online" && o.pix_expires_at !== null || JSON.stringify(o));
+await ok("pedido pago online não conta: cancelando 1 aberto (fica 4 abertos + 1 pago), a troca passa", async () => {
+  await como("authenticated", PAINEL, () => um("select dlv_cancelar_pedido($1, 'teste', 'Caixa')", [travaAbertos[0].pedido_id]));
+  return { r: await trocar(travaOnline.pedido_id, "credito", null), andamento: (await emAndamento("17830000011"))[0] };
+}, (x: any) => x.r.status === "em_producao" && x.r.forma === "credito" && x.andamento.n === 6 && x.andamento.pagos === 1 || JSON.stringify(x));
+
+await ok("rodar a migration da troca de novo é recusado e não grava nada", async () => {
+  const antes = await um("select md5(pg_get_functiondef('public.dlv_trocar_para_pagamento_na_entrega(uuid, text, bigint)'::regprocedure))");
+  let erro = "";
+  try { await db.exec(readFileSync(`${DIR}/20260916140000_dlv_trocar_para_entrega.sql`, "utf8")); } catch (e: any) { erro = e.message; } finally { await db.exec("ROLLBACK"); }
+  const depois = await um("select md5(pg_get_functiondef('public.dlv_trocar_para_pagamento_na_entrega(uuid, text, bigint)'::regprocedure))");
+  return { erro, igual: antes === depois };
+}, (x: any) => x.erro.includes("already exists") && x.igual || JSON.stringify(x));
+
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
