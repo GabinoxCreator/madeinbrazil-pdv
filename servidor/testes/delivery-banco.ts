@@ -1296,8 +1296,18 @@ await ok("usuário desativado no painel não recebe", async () => {
 
 const pEntrega = await criar(naEntrega("17600000001"));
 await ok("pedido na entrega do cardápio chama o aviso uma vez", () => chamadasDe(pEntrega.pedido_id), (n: any) => n === 1 || n);
-await ok("a chamada vai para a função pdv-push com o id do pedido", () => sql("select url, body from net.chamadas where body ->> 'pedido' = $1", [pEntrega.pedido_id]),
-  (r: any) => r[0].url.endsWith("/functions/v1/pdv-push") && r[0].body.acao === "pedido" || JSON.stringify(r));
+await ok("a chamada vai para a função pdv-push com o id do pedido e o token guardado", async () => ({
+  r: await sql("select url, body, headers from net.chamadas where body ->> 'pedido' = $1", [pEntrega.pedido_id]),
+  token: await um("select token from pdv_push_segredo") }),
+  (x: any) => x.r[0].url.endsWith("/functions/v1/pdv-push") && x.r[0].body.acao === "pedido"
+    && x.token.length === 64 && x.r[0].headers["x-pdv-push-token"] === x.token || JSON.stringify(x));
+await recusa("painel não lê o token", () => como("authenticated", PAINEL, () => sql("select * from pdv_push_segredo")), "permission denied");
+await recusa("anônimo não confere token", () => como("anon", null, () => sql("select pdv_push_token_valido('x')")), "permission denied");
+await ok("token: o certo vale, errado e vazio não", async () => {
+  const token = await um("select token from pdv_push_segredo");
+  const v = (t: string | null) => como("service_role", null, () => um("select pdv_push_token_valido($1)", [t]));
+  return { certo: await v(token), errado: await v("0".repeat(64)), nulo: await v(null) };
+}, (x: any) => x.certo === true && x.errado === false && x.nulo === false || JSON.stringify(x));
 await ok("reivindicar devolve o resumo na primeira vez", () => reivindicar(pEntrega.pedido_id),
   (r: any) => r && r.numero > 0 && r.pago === false && r.pagamento === "dinheiro" && r.modo === "entrega" || JSON.stringify(r));
 await ok("reivindicar de novo devolve nulo (aviso único)", () => reivindicar(pEntrega.pedido_id), (r: any) => r === null || JSON.stringify(r));

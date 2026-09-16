@@ -18,14 +18,16 @@
 --
 -- As chaves VAPID (par de chaves do push) são criadas pela própria Edge
 -- Function na primeira vez e ficam só no banco, sem passar por chat ou git.
+-- O gatilho manda um token aleatório (gerado aqui, guardado numa tabela
+-- fechada) no header x-pdv-push-token; sem ele a função não avisa ninguém.
 --
 -- Mudanças (nada destrutivo; não apaga nem altera dados existentes):
 --   * extensão pg_net (chamada HTTP de dentro do banco)
 --   * coluna dlv_orders.push_avisado_em
---   * tabelas pdv_push_chaves e pdv_push_inscricoes, fechadas (RLS sem
---     política; só as funções abaixo mexem nelas)
+--   * tabelas pdv_push_chaves, pdv_push_segredo e pdv_push_inscricoes,
+--     fechadas (RLS sem política; só as funções abaixo mexem nelas)
 --   * painel: pdv_push_inscrever, pdv_push_cancelar
---   * só service_role: pdv_push_obter_chaves, pdv_push_gravar_chaves,
+--   * só service_role: pdv_push_token_valido, pdv_push_obter_chaves, pdv_push_gravar_chaves,
 --     pdv_push_reivindicar_pedido, pdv_push_destinos, pdv_push_desativar
 --   * gatilho dlv_orders_avisar_push
 -- =====================================================================
@@ -49,6 +51,15 @@ CREATE TABLE public.pdv_push_chaves (
 );
 ALTER TABLE public.pdv_push_chaves ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.pdv_push_chaves FROM PUBLIC, anon, authenticated;
+
+CREATE TABLE public.pdv_push_segredo (
+  id    smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  token text NOT NULL CHECK (length(token) = 64)
+);
+ALTER TABLE public.pdv_push_segredo ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pdv_push_segredo FROM PUBLIC, anon, authenticated;
+INSERT INTO public.pdv_push_segredo (id, token)
+VALUES (1, replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', ''));
 
 CREATE TABLE public.pdv_push_inscricoes (
   endpoint      text PRIMARY KEY CHECK (endpoint LIKE 'https://%' AND length(endpoint) <= 1000),
@@ -104,6 +115,12 @@ $$;
 -- ---------------------------------------------------------------------
 -- Edge Function pdv-push (service role)
 -- ---------------------------------------------------------------------
+-- confere o token que o gatilho mandou (a função não chega a ver o valor guardado)
+CREATE FUNCTION public.pdv_push_token_valido(p_token text)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT coalesce((SELECT token = p_token FROM public.pdv_push_segredo WHERE id = 1), false);
+$$;
+
 CREATE FUNCTION public.pdv_push_obter_chaves()
 RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
   SELECT jsonb_build_object('publica', publica, 'privada', privada) FROM public.pdv_push_chaves WHERE id = 1;
@@ -170,7 +187,9 @@ BEGIN
       PERFORM net.http_post(
         url := 'https://ykhywmtauljpjuqxxpez.supabase.co/functions/v1/pdv-push',
         body := jsonb_build_object('acao', 'pedido', 'pedido', NEW.id),
-        headers := '{"Content-Type": "application/json"}'::jsonb
+        headers := jsonb_build_object(
+          'Content-Type', 'application/json',
+          'x-pdv-push-token', (SELECT token FROM public.pdv_push_segredo WHERE id = 1))
       );
     EXCEPTION WHEN OTHERS THEN
       -- aviso nunca pode travar o pedido
@@ -194,12 +213,14 @@ REVOKE ALL ON FUNCTION public.pdv_push_cancelar(text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.pdv_push_inscrever(text, text, text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.pdv_push_cancelar(text) TO authenticated;
 
+REVOKE ALL ON FUNCTION public.pdv_push_token_valido(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.pdv_push_obter_chaves() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.pdv_push_gravar_chaves(text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.pdv_push_reivindicar_pedido(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.pdv_push_destinos() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.pdv_push_desativar(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.dlv__avisar_push() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.pdv_push_token_valido(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.pdv_push_obter_chaves() TO service_role;
 GRANT EXECUTE ON FUNCTION public.pdv_push_gravar_chaves(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.pdv_push_reivindicar_pedido(uuid) TO service_role;
