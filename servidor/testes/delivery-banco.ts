@@ -931,5 +931,128 @@ await ok("webhook repetido no cancelado pago: ja_confirmado, continua cancelado"
 await ok("painel cancela pedido online pago: precisa_estorno", () => como("authenticated", PAINEL, () => um("select dlv_cancelar_pedido($1, 'acabou o frango', 'Caixa')", [on1.pedido_id])),
   (r: any) => r.tipo === "cancelado" && r.precisa_estorno === true || JSON.stringify(r));
 
+// ---------------------------------------------------------------- 19. checkout transparente (migration dlv_checkout_transparente)
+console.log("\n— Checkout transparente");
+const registrarPagamento = (id: string, mp: string | null, tipo: string | null, pix: string | null) =>
+  como("service_role", null, () => sql("select dlv_registrar_pagamento_online($1, $2, $3, $4)", [id, mp, tipo, pix]));
+const pagamentoDb = async (id: string) => (await sql("select mp_payment_id, mp_payment_type, pix_copy_paste, paid_at is not null as pago, status from dlv_orders where id = $1", [id]))[0];
+const PIX1 = "00020126580014br.gov.bcb.pix0136chave-teste5204000053039865802BR6304ABCD";
+
+await recusa("anônimo não executa dlv_registrar_pagamento_online", () => como("anon", null, () => sql("select dlv_registrar_pagamento_online(gen_random_uuid(), 'x', 'pix', 'y')")), "permission denied");
+await recusa("logado sem painel não executa dlv_registrar_pagamento_online", () => como("authenticated", ESTRANHO, () => sql("select dlv_registrar_pagamento_online(gen_random_uuid(), 'x', 'pix', 'y')")), "permission denied");
+await recusa("usuário do painel não executa dlv_registrar_pagamento_online", () => como("authenticated", PAINEL, () => sql("select dlv_registrar_pagamento_online(gen_random_uuid(), 'x', 'pix', 'y')")), "permission denied");
+await ok("anônimo continua executando só as 5 funções públicas do delivery", () => sql(`select string_agg(p.proname, ',' order by p.proname) f from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and left(p.proname, 4) = 'dlv_' and has_function_privilege('anon', p.oid, 'EXECUTE')`),
+  (r: any[]) => r[0].f === "dlv_acompanhar_pedido,dlv_cardapio_publico,dlv_consultar_entrega,dlv_criar_pedido,dlv_status_loja" || r[0].f);
+
+const tr1 = await criar(pedidoOnline("17860000001"));
+await ok("pedido para pagamento antes de registrar: chaves novas vazias, pago=false", () => paraPagamento(tr1.codigo),
+  (r: any) => r.mp_payment_id === null && r.mp_payment_type === null && r.pix_copia_cola === null && r.pago === false && r.tentativas_cartao === 0 || JSON.stringify(r));
+await ok("registra Pix em pedido online aguardando: grava id (sem espaços), tipo e copia e cola", async () => {
+  await registrarPagamento(tr1.pedido_id, " mp-tr-1 ", " pix ", PIX1);
+  return pagamentoDb(tr1.pedido_id);
+}, (o: any) => o.mp_payment_id === "mp-tr-1" && o.mp_payment_type === "pix" && o.pix_copy_paste === PIX1 && !o.pago && o.status === "aguardando_pagamento" || JSON.stringify(o));
+await ok("dlv_pedido_para_pagamento mantém as chaves antigas e traz mp_payment_id, mp_payment_type, pix_copia_cola e pago", () => paraPagamento(tr1.codigo),
+  (r: any) => Object.keys(r).sort().join() === ["id", "numero", "status", "forma", "total_cents", "cliente_nome", "cliente_telefone", "expira_em",
+    "preference_id", "checkout_url", "itens", "mp_payment_id", "mp_payment_type", "pix_copia_cola", "pago", "tentativas_cartao"].sort().join()
+    && r.id === tr1.pedido_id && r.total_cents === 2940 && r.itens.length === 1
+    && r.mp_payment_id === "mp-tr-1" && r.mp_payment_type === "pix" && r.pix_copia_cola === PIX1 && r.pago === false || JSON.stringify(r));
+await ok("nova tentativa (cartão) sobrescreve: id e tipo novos, copia e cola vazio vira null", async () => {
+  await registrarPagamento(tr1.pedido_id, "mp-tr-2", "credit_card", "   ");
+  return pagamentoDb(tr1.pedido_id);
+}, (o: any) => o.mp_payment_id === "mp-tr-2" && o.mp_payment_type === "credit_card" && o.pix_copy_paste === null && !o.pago || JSON.stringify(o));
+await ok("tipo vazio vira null; tipo e copia e cola compridos são cortados (40 e 1000)", async () => {
+  await registrarPagamento(tr1.pedido_id, "mp-tr-3", "", "x".repeat(1500));
+  const vazio = await pagamentoDb(tr1.pedido_id);
+  await registrarPagamento(tr1.pedido_id, "mp-tr-2", "t".repeat(60), null);
+  const longo = await pagamentoDb(tr1.pedido_id);
+  return { vazio, longo };
+}, (x: any) => x.vazio.mp_payment_type === null && x.vazio.pix_copy_paste.length === 1000
+  && x.longo.mp_payment_id === "mp-tr-2" && x.longo.mp_payment_type.length === 40 && x.longo.pix_copy_paste === null || JSON.stringify(x).slice(0, 300));
+await registrarPagamento(tr1.pedido_id, "mp-tr-2", "credit_card", null);
+
+const trDinheiro = await criar(pedido({ cliente: { nome: "Transp Dinheiro", telefone: "17860000002" } }));
+const trPix = await criar(pedido({ cliente: { nome: "Transp Pix", telefone: "17860000003" }, pagamento: { forma: "pix_online" } }));
+const trCancelado = await criar(pedidoOnline("17860000004"));
+await como("authenticated", PAINEL, () => um("select dlv_cancelar_pedido($1, 'cliente desistiu', 'Caixa')", [trCancelado.pedido_id]));
+await recusa("pedido em dinheiro é recusado", () => registrarPagamento(trDinheiro.pedido_id, "mp-tr-9", "pix", PIX1), "Pedido não está aguardando pagamento online");
+await recusa("pedido Pix online antigo (não é 'online') é recusado", () => registrarPagamento(trPix.pedido_id, "mp-tr-9", "pix", PIX1), "Pedido não está aguardando pagamento online");
+await recusa("pedido online já pago é recusado", () => registrarPagamento(on2.pedido_id, "mp-tr-9", "pix", PIX1), "Pedido não está aguardando pagamento online");
+await recusa("pedido online cancelado é recusado", () => registrarPagamento(trCancelado.pedido_id, "mp-tr-9", "pix", PIX1), "Pedido não está aguardando pagamento online");
+await recusa("pedido que não existe é recusado", () => registrarPagamento("00000000-0000-0000-0000-00000000abcd", "mp-tr-9", "pix", PIX1), "Pedido não está aguardando pagamento online");
+await recusa("id vazio é recusado", () => registrarPagamento(tr1.pedido_id, "   ", "pix", PIX1), "Pagamento sem identificador");
+await recusa("id nulo é recusado", () => registrarPagamento(tr1.pedido_id, null, "pix", PIX1), "Pagamento sem identificador");
+await recusa("id de pagamento já ligado a outro pedido (pago) é recusado", () => registrarPagamento(tr1.pedido_id, "mp-on-1", "pix", PIX1), "Pagamento mp-on-1 já está ligado a outro pedido");
+const tr2 = await criar(pedidoOnline("17860000005"));
+await recusa("id registrado em outro pedido aguardando é recusado", () => registrarPagamento(tr2.pedido_id, "mp-tr-2", "pix", PIX1), "Pagamento mp-tr-2 já está ligado a outro pedido");
+await ok("recusas não gravaram nada", async () => ({
+  t1: await pagamentoDb(tr1.pedido_id), t2: await pagamentoDb(tr2.pedido_id), din: await pagamentoDb(trDinheiro.pedido_id),
+  pix: await pagamentoDb(trPix.pedido_id), can: await pagamentoDb(trCancelado.pedido_id), pago: await pagamentoDb(on2.pedido_id) }),
+  (x: any) => x.t1.mp_payment_id === "mp-tr-2" && x.t1.mp_payment_type === "credit_card" && x.t2.mp_payment_id === null && x.din.mp_payment_id === null
+    && x.pix.mp_payment_id === null && x.can.mp_payment_id === null && x.pago.mp_payment_id === "mp-on-3" && x.pago.mp_payment_type === "credit_card" || JSON.stringify(x));
+
+await ok("depois de registrar, confirmar com o mesmo id: vai para produção normal", async () => ({
+  r: await confirmarOnline(tr1.pedido_id, "mp-tr-2", 2940, "credit_card"), o: await pagamentoDb(tr1.pedido_id), c: await cuponsDe(tr1.pedido_id) }),
+  (x: any) => x.r.ja_confirmado === false && x.r.status === "em_producao" && x.r.numero === tr1.numero
+    && x.o.pago && x.o.mp_payment_id === "mp-tr-2" && x.o.mp_payment_type === "credit_card" && x.c === 3 || JSON.stringify(x));
+await ok("segunda confirmação com o mesmo id: ja_confirmado, sem duplicar cupom", async () => ({
+  r: await confirmarOnline(tr1.pedido_id, "mp-tr-2", 2940, "credit_card"), c: await cuponsDe(tr1.pedido_id) }),
+  (x: any) => x.r.ja_confirmado === true && x.r.status === "em_producao" && x.c === 3 || JSON.stringify(x));
+await ok("pedido para pagamento depois de pago: pago=true", () => paraPagamento(tr1.codigo),
+  (r: any) => r.pago === true && r.status === "em_producao" && r.mp_payment_id === "mp-tr-2" || JSON.stringify(r));
+await recusa("registrar de novo depois de pago é recusado", () => registrarPagamento(tr1.pedido_id, "mp-tr-4", "pix", PIX1), "Pedido não está aguardando pagamento online");
+
+// tentativas com cartão (contra teste de cartão roubado)
+console.log("\n— Tentativas com cartão");
+const tentativa = (id: string) => como("service_role", null, () => um("select dlv_tentativa_cartao($1)", [id]));
+const tentativasDb = (id: string) => um("select mp_card_attempts from dlv_orders where id = $1", [id]);
+const LIMITE_PEDIDO = "Muitas tentativas com cartão neste pedido. Pague com Pix ou fale com a loja.";
+const LIMITE_TELEFONE = "Muitas tentativas com cartão. Pague com Pix ou fale com a loja.";
+
+await recusa("anônimo não executa dlv_tentativa_cartao", () => como("anon", null, () => sql("select dlv_tentativa_cartao(gen_random_uuid())")), "permission denied");
+await recusa("logado sem painel não executa dlv_tentativa_cartao", () => como("authenticated", ESTRANHO, () => sql("select dlv_tentativa_cartao(gen_random_uuid())")), "permission denied");
+await recusa("usuário do painel não executa dlv_tentativa_cartao", () => como("authenticated", PAINEL, () => sql("select dlv_tentativa_cartao(gen_random_uuid())")), "permission denied");
+await ok("configurações card_attempts_per_order = 5 e card_attempts_per_phone_2h = 10, com descrição", () => sql(
+  "select key, value, description from dlv_settings where key in ('card_attempts_per_order', 'card_attempts_per_phone_2h') order by key"),
+  (r: any[]) => r.length === 2 && r[0].key === "card_attempts_per_order" && r[0].value === "5" && r[1].value === "10" && r.every((x) => x.description?.length > 10) || JSON.stringify(r));
+await ok("pedidos antigos começam com 0 tentativas", () => um("select count(*)::int from dlv_orders where mp_card_attempts <> 0"), (n: number) => n === 0 || `${n}`);
+
+const ca = await criar(pedidoOnline("17850000001"));
+await ok("1ª tentativa devolve 1 e grava no pedido", async () => ({ r: await tentativa(ca.pedido_id), db: await tentativasDb(ca.pedido_id) }),
+  (x: any) => x.r === 1 && x.db === 1 || JSON.stringify(x));
+await ok("tentativas 2 a 5 passam e incrementam", async () => { const r = []; for (let i = 0; i < 4; i++) r.push(await tentativa(ca.pedido_id)); return r; },
+  (r: number[]) => r.join() === "2,3,4,5" || r.join());
+await recusa("6ª tentativa no mesmo pedido é recusada", () => tentativa(ca.pedido_id), LIMITE_PEDIDO);
+await ok("recusa não incrementa; dlv_pedido_para_pagamento traz tentativas_cartao = 5", async () => ({ db: await tentativasDb(ca.pedido_id), p: await paraPagamento(ca.codigo) }),
+  (x: any) => x.db === 5 && x.p.tentativas_cartao === 5 || JSON.stringify({ db: x.db, t: x.p?.tentativas_cartao }));
+
+const cb = await criar(pedidoOnline("17850000001"));
+await ok("outro pedido do mesmo telefone: passa até somar 10 (5 + 5)", async () => { const r = []; for (let i = 0; i < 5; i++) r.push(await tentativa(cb.pedido_id)); return r; },
+  (r: number[]) => r.join() === "1,2,3,4,5" || r.join());
+const cc = await criar(pedidoOnline("17850000001"));
+await recusa("3º pedido do mesmo telefone, com 0 tentativas próprias: recusado pelo limite do telefone (soma 10 em 2h)", () => tentativa(cc.pedido_id), LIMITE_TELEFONE);
+await ok("recusa pelo telefone não incrementa", () => tentativasDb(cc.pedido_id), (n: number) => n === 0 || `${n}`);
+const cd = await criar(pedidoOnline("17850000002"));
+await ok("outro telefone não é afetado", () => tentativa(cd.pedido_id), (n: number) => n === 1 || `${n}`);
+await ok("pedidos criados há mais de 2 horas não contam para o telefone", async () => {
+  await sql("update dlv_orders set created_at = now() - interval '3 hours' where id = $1", [ca.pedido_id]);
+  return tentativa(cc.pedido_id);
+}, (n: number) => n === 1 || `${n}`);
+await ok("3º pedido completa 5 tentativas e a 6ª esbarra no limite do pedido", async () => {
+  const r = []; for (let i = 0; i < 4; i++) r.push(await tentativa(cc.pedido_id));
+  let erro = ""; try { await tentativa(cc.pedido_id); } catch (e: any) { erro = e.message; }
+  return { r, erro };
+}, (x: any) => x.r.join() === "2,3,4,5" && x.erro.includes(LIMITE_PEDIDO) || JSON.stringify(x));
+
+const ce = await criar(pedidoOnline("17850000003"));
+await como("authenticated", PAINEL, () => um("select dlv_cancelar_pedido($1, 'cliente desistiu', 'Caixa')", [ce.pedido_id]));
+await recusa("tentativa em pedido pago é recusada", () => tentativa(tr1.pedido_id), "Pedido não está aguardando pagamento online");
+await recusa("tentativa em pedido cancelado é recusada", () => tentativa(ce.pedido_id), "Pedido não está aguardando pagamento online");
+await recusa("tentativa em pedido em dinheiro é recusada", () => tentativa(trDinheiro.pedido_id), "Pedido não está aguardando pagamento online");
+await recusa("tentativa em pedido Pix online antigo é recusada", () => tentativa(trPix.pedido_id), "Pedido não está aguardando pagamento online");
+await recusa("tentativa em pedido que não existe é recusada", () => tentativa("00000000-0000-0000-0000-00000000abcd"), "Pedido não está aguardando pagamento online");
+await ok("recusas por situação não incrementaram", async () => [await tentativasDb(tr1.pedido_id), await tentativasDb(ce.pedido_id), await tentativasDb(trDinheiro.pedido_id), await tentativasDb(trPix.pedido_id)],
+  (r: number[]) => r.join() === "0,0,0,0" || r.join());
+
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
