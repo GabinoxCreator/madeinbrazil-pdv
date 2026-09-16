@@ -51,6 +51,11 @@ await db.exec(`
   GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO anon, authenticated, service_role;
   GRANT SELECT ON storage.buckets TO anon, authenticated, service_role;
   INSERT INTO storage.buckets (id, name, public) VALUES ('dlv-fotos', 'dlv-fotos', false), ('outro', 'outro', false);
+  -- pg_net mínimo: guarda as chamadas em vez de fazer HTTP
+  CREATE SCHEMA net;
+  CREATE TABLE net.chamadas (id bigserial PRIMARY KEY, url text, body jsonb, headers jsonb);
+  CREATE FUNCTION net.http_post(url text, body jsonb, headers jsonb) RETURNS bigint LANGUAGE sql AS
+    $$ INSERT INTO net.chamadas (url, body, headers) VALUES (url, body, headers) RETURNING id $$;
 `);
 
 // Três fases, igual ao servidor real: (1) tudo ANTES da migration de tamanhos, cria pedidos com os
@@ -1239,6 +1244,95 @@ await ok("rodar a migration da troca de novo é recusado e não grava nada", asy
   const depois = await um("select md5(pg_get_functiondef('public.dlv_trocar_para_pagamento_na_entrega(uuid, text, bigint)'::regprocedure))");
   return { erro, igual: antes === depois };
 }, (x: any) => x.erro.includes("already exists") && x.igual || JSON.stringify(x));
+
+// ---------------------------------------------------------------- 16. notificações push
+console.log("\n— Notificações push");
+const EP = "https://fcm.googleapis.com/fcm/send/aparelho-1";
+const EP2 = "https://web.push.apple.com/aparelho-2";
+const inscrever = (papel: "anon" | "authenticated", sub: string | null, ep: string, p256 = "chave-p256", au = "chave-auth") =>
+  como(papel, sub, () => sql("select pdv_push_inscrever($1, $2, $3, 'iPhone')", [ep, p256, au]));
+const destinos = () => como("service_role", null, () => sql("select * from pdv_push_destinos() order by endpoint"));
+const chamadasDe = (id: string) => um("select count(*)::int from net.chamadas where body ->> 'pedido' = $1", [id]);
+const reivindicar = (id: string) => como("service_role", null, () => um("select pdv_push_reivindicar_pedido($1)", [id]));
+
+await recusa("anônimo não se inscreve", () => inscrever("anon", null, EP), "permission denied");
+await recusa("usuário logado fora do painel não se inscreve", () => inscrever("authenticated", ESTRANHO, EP), "Sem permissão para receber notificações");
+await recusa("endereço que não é https é recusado", () => inscrever("authenticated", PAINEL, "http://x"), "Inscrição de notificação inválida");
+await recusa("chave vazia é recusada", () => inscrever("authenticated", PAINEL, EP, ""), "Inscrição de notificação inválida");
+await ok("usuário do painel se inscreve; repetir atualiza as chaves sem duplicar", async () => {
+  await inscrever("authenticated", PAINEL, EP);
+  await inscrever("authenticated", PAINEL, EP, "chave-nova");
+  await inscrever("authenticated", PAINEL, EP2);
+  return destinos();
+}, (r: any) => r.length === 2 && r[0].endpoint === EP && r[0].p256dh === "chave-nova" && r[1].endpoint === EP2 || JSON.stringify(r));
+await recusa("painel não lê a tabela de inscrições", () => como("authenticated", PAINEL, () => sql("select * from pdv_push_inscricoes")), "permission denied");
+await recusa("painel não lê as chaves", () => como("authenticated", PAINEL, () => sql("select * from pdv_push_chaves")), "permission denied");
+await recusa("painel não pega as chaves pela função", () => como("authenticated", PAINEL, () => sql("select pdv_push_obter_chaves()")), "permission denied");
+await recusa("painel não lista destinos", () => como("authenticated", PAINEL, () => sql("select * from pdv_push_destinos()")), "permission denied");
+await recusa("anônimo não reivindica pedido", () => como("anon", null, () => sql("select pdv_push_reivindicar_pedido(gen_random_uuid())")), "permission denied");
+
+await ok("chaves: a primeira gravação vale, a segunda devolve a primeira", async () => ({
+  a: await como("service_role", null, () => um("select pdv_push_gravar_chaves('pub-1', 'priv-1')")),
+  b: await como("service_role", null, () => um("select pdv_push_gravar_chaves('pub-2', 'priv-2')")),
+  c: await como("service_role", null, () => um("select pdv_push_obter_chaves()")) }),
+  (x: any) => x.a.publica === "pub-1" && x.b.publica === "pub-1" && x.b.privada === "priv-1" && x.c.publica === "pub-1" || JSON.stringify(x));
+
+await ok("cancelar só desliga o aparelho do próprio usuário", async () => {
+  await como("authenticated", ESTRANHO, () => sql("select pdv_push_cancelar($1)", [EP2]));
+  const antes = (await destinos()).length;
+  await como("authenticated", PAINEL, () => sql("select pdv_push_cancelar($1)", [EP2]));
+  return { antes, depois: (await destinos()).length };
+}, (x: any) => x.antes === 2 && x.depois === 1 || JSON.stringify(x));
+await ok("aparelho cancelado volta ao se inscrever de novo", async () => { await inscrever("authenticated", PAINEL, EP2); return destinos(); },
+  (r: any) => r.length === 2 || JSON.stringify(r));
+await ok("service_role desativa aparelho vencido", async () => { await como("service_role", null, () => sql("select pdv_push_desativar($1)", [EP2])); return destinos(); },
+  (r: any) => r.length === 1 && r[0].endpoint === EP || JSON.stringify(r));
+await ok("usuário desativado no painel não recebe", async () => {
+  await sql("update pdv_panel_users set is_active = false where user_id = $1", [PAINEL]);
+  const r = await destinos();
+  await sql("update pdv_panel_users set is_active = true where user_id = $1", [PAINEL]);
+  return r;
+}, (r: any) => r.length === 0 || JSON.stringify(r));
+
+const pEntrega = await criar(naEntrega("17600000001"));
+await ok("pedido na entrega do cardápio chama o aviso uma vez", () => chamadasDe(pEntrega.pedido_id), (n: any) => n === 1 || n);
+await ok("a chamada vai para a função pdv-push com o id do pedido", () => sql("select url, body from net.chamadas where body ->> 'pedido' = $1", [pEntrega.pedido_id]),
+  (r: any) => r[0].url.endsWith("/functions/v1/pdv-push") && r[0].body.acao === "pedido" || JSON.stringify(r));
+await ok("reivindicar devolve o resumo na primeira vez", () => reivindicar(pEntrega.pedido_id),
+  (r: any) => r && r.numero > 0 && r.pago === false && r.pagamento === "dinheiro" && r.modo === "entrega" || JSON.stringify(r));
+await ok("reivindicar de novo devolve nulo (aviso único)", () => reivindicar(pEntrega.pedido_id), (r: any) => r === null || JSON.stringify(r));
+await ok("avançar o pedido não chama o aviso de novo", async () => {
+  await como("authenticated", PAINEL, () => sql("select dlv_avancar_pedido($1, 'pronto', 'Caixa')", [pEntrega.pedido_id]));
+  return chamadasDe(pEntrega.pedido_id);
+}, (n: any) => n === 1 || n);
+
+const pOnline = await criar(pedidoOnline("17600000002"));
+await ok("pedido online aguardando pagamento não avisa", () => chamadasDe(pOnline.pedido_id), (n: any) => n === 0 || n);
+await ok("reivindicar pedido aguardando pagamento devolve nulo", () => reivindicar(pOnline.pedido_id), (r: any) => r === null || JSON.stringify(r));
+await ok("pagamento confirmado avisa uma vez (mesmo com aceite automático mudando de novo)", async () => {
+  await confirmarOnline(pOnline.pedido_id, "mp-push-1", pOnline.total_cents, "pix");
+  return { n: await chamadasDe(pOnline.pedido_id), r: await reivindicar(pOnline.pedido_id) };
+}, (x: any) => x.n === 1 && x.r?.pago === true && x.r?.pagamento === "online" || JSON.stringify(x));
+
+await sql("UPDATE dlv_settings SET value = 'false' WHERE key = 'auto_accept'");
+const pAnalise = await criar(naEntrega("17600000003"));
+await ok("sem aceite automático: avisa ao entrar em análise, e aceitar não avisa de novo", async () => {
+  const antes = await chamadasDe(pAnalise.pedido_id);
+  await como("authenticated", PAINEL, () => sql("select dlv_avancar_pedido($1, 'em_producao', 'Caixa')", [pAnalise.pedido_id]));
+  return { antes, depois: await chamadasDe(pAnalise.pedido_id) };
+}, (x: any) => x.antes === 1 && x.depois === 1 || JSON.stringify(x));
+await sql("UPDATE dlv_settings SET value = 'true' WHERE key = 'auto_accept'");
+
+await ok("pedido lançado pelo painel não avisa", async () => {
+  const r = await como("authenticated", PAINEL, () => um("select dlv_criar_pedido_painel($1, 'Caixa')", [JSON.stringify(naEntrega("17600000004"))]));
+  return { n: await chamadasDe(r.pedido_id), rv: await reivindicar(r.pedido_id) };
+}, (x: any) => x.n === 0 && x.rv === null || JSON.stringify(x));
+
+await ok("se o pg_net falhar, o pedido é criado mesmo assim", async () => {
+  await db.exec("ALTER FUNCTION net.http_post(text, jsonb, jsonb) RENAME TO http_post_fora");
+  try { return await criar(naEntrega("17600000005")); }
+  finally { await db.exec("ALTER FUNCTION net.http_post_fora(text, jsonb, jsonb) RENAME TO http_post"); }
+}, (r: any) => r?.status === "em_producao" || JSON.stringify(r));
 
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
