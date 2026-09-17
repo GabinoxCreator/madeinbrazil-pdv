@@ -18,6 +18,10 @@
         android:label="@string/app_name"
         android:supportsRtl="false"
         android:theme="@style/Theme.MadeInBrazilPDV">
+        <!-- a Cielo exige este metadado para distribuir nos terminais: "uri" = integracao por Deep Link -->
+        <meta-data
+            android:name="cs_integration_type"
+            android:value="uri" />
         <!-- singleTask: a resposta da Cielo cai nesta mesma tela (onNewIntent) -->
         <activity
             android:name=".MainActivity"

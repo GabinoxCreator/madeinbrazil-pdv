@@ -27,8 +27,8 @@ android {
         applicationId = "br.com.madeinbrazilbar.pdv"
         minSdk = 24          // exigencia da Cielo
         targetSdk = 29       // piso exigido pela Cielo para distribuicao na Cielo Store
-        versionCode = 3      // a Cielo exige versionCode maior a cada envio
-        versionName = "0.3.0"
+        versionCode = 4      // a Cielo exige versionCode maior a cada envio
+        versionName = "0.3.1"
 
         buildConfigField("String", "SERVIDOR_URL", credencial("servidor.url"))
         buildConfigField("String", "SERVIDOR_CHAVE_PUBLICA", credencial("servidor.chave_publica"))
