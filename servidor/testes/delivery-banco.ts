@@ -1344,5 +1344,78 @@ await ok("se o pg_net falhar, o pedido é criado mesmo assim", async () => {
   finally { await db.exec("ALTER FUNCTION net.http_post_fora(text, jsonb, jsonb) RENAME TO http_post"); }
 }, (r: any) => r?.status === "em_producao" || JSON.stringify(r));
 
+// ---------------------------------------------------------------- 14. impressão do que é lançado pelo navegador
+console.log("\n— Impressão do pedido lançado pelo navegador (painel e /garcom)");
+const pratos = await sql(`select i.id, i.name, pp.code from pdv_menu_items i
+  join pdv_production_points pp on pp.id = i.production_point_id where i.is_active order by pp.code, i.name`);
+const daCozinha = pratos.find((x: any) => x.code === "cozinha") ?? pratos[0];
+const doBar = pratos.find((x: any) => x.code !== daCozinha.code) ?? pratos[1];
+const comandaGarcom = await como("authenticated", PAINEL, () =>
+  um("select pdv_abrir_comanda(9101, 'T1', 2, 'Cliente Teste', false, 'Gabriel')"));
+const lancar = (itens: any[]) => como("authenticated", PAINEL, () =>
+  um("select pdv_lancar_pedido($1, $2, 'Gabriel')", [comandaGarcom, JSON.stringify(itens)]));
+const cuponsDo = (pedido: string) => sql(
+  `select pp.code, j.status, j.attempts from pdv_print_jobs j
+     join pdv_production_points pp on pp.id = j.production_point_id where j.order_id = $1 order by pp.code`, [pedido]);
+
+const pedidoGarcom = await ok("lançar pelo navegador enfileira um cupom por ponto de produção", async () => {
+  const id = await lancar([
+    { menu_item_id: daCozinha.id, quantidade: 2, observacao: "sem cebola" },
+    { menu_item_id: doBar.id, quantidade: 1 },
+  ]);
+  return { id, cupons: await cuponsDo(id) };
+}, (r: any) => r.cupons.length === 2 && r.cupons.every((c: any) => c.status === "pendente") || JSON.stringify(r));
+
+await recusa("quem não é estação não reserva a fila das comandas",
+  () => como("authenticated", PAINEL, () => um("select pdv_reservar_impressoes(10)")), "estação de impressão");
+
+const reservados = await ok("estação reserva e recebe comanda, itens, observação e o IP do ponto", () =>
+  como("authenticated", TERMINAL, () => um("select pdv_reservar_impressoes(10)")),
+  (r: any) => Array.isArray(r) && r.length === 2
+    && r.every((t: any) => t.comanda.numero === 9101 && t.comanda.mesa === "T1" && t.pedido.operador === "Gabriel" && t.ponto.ip)
+    && r.some((t: any) => t.itens.some((i: any) => i.quantidade === 2 && i.observacao === "sem cebola"))
+    || JSON.stringify(r).slice(0, 400));
+
+await ok("cupom reservado não volta na reserva seguinte", () =>
+  como("authenticated", TERMINAL, () => um("select pdv_reservar_impressoes(10)")),
+  (r: any) => Array.isArray(r) && r.length === 0 || JSON.stringify(r));
+
+await ok("cupom impresso vira 'impresso'; o pedido só fica 'enviado' quando todos saem", async () => {
+  await como("authenticated", TERMINAL, () => sql("select pdv_concluir_impressao($1, true)", [reservados[0].trabalho_id]));
+  const meio = await um("select print_status from pdv_card_orders where id = $1", [pedidoGarcom.id]);
+  await como("authenticated", TERMINAL, () => sql("select pdv_concluir_impressao($1, true)", [reservados[1].trabalho_id]));
+  return { meio, fim: await um("select print_status from pdv_card_orders where id = $1", [pedidoGarcom.id]), cupons: await cuponsDo(pedidoGarcom.id) };
+}, (r: any) => r.meio === "pendente" && r.fim === "enviado" && r.cupons.every((c: any) => c.status === "impresso") || JSON.stringify(r));
+
+await ok("térmica fora do ar: o cupom volta para a fila e desiste na 5ª tentativa", async () => {
+  const id = await lancar([{ menu_item_id: daCozinha.id, quantidade: 1, observacao: null }]);
+  const tentativas: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    const t = await como("authenticated", TERMINAL, () => um("select pdv_reservar_impressoes(10)"));
+    if (!t.length) break;
+    await como("authenticated", TERMINAL, () => sql("select pdv_concluir_impressao($1, false, 'sem resposta da térmica')", [t[0].trabalho_id]));
+    tentativas.push((await cuponsDo(id))[0].status);
+  }
+  return { tentativas, pedido: await um("select print_status from pdv_card_orders where id = $1", [id]) };
+}, (r: any) => r.tentativas.length === 5 && r.tentativas[3] === "pendente" && r.tentativas[4] === "falha" && r.pedido === "falha" || JSON.stringify(r));
+
+await ok("item cancelado depois do lançamento não sai na produção", async () => {
+  const id = await lancar([
+    { menu_item_id: daCozinha.id, quantidade: 1, observacao: null },
+    { menu_item_id: doBar.id, quantidade: 1, observacao: null },
+  ]);
+  const item = await um("select id from pdv_card_items where order_id = $1 and production_point_id = (select id from pdv_production_points where code = $2)", [id, doBar.code]);
+  await como("authenticated", PAINEL, () => sql("select pdv_cancelar_item($1, 'cliente desistiu', 'Gabriel')", [item]));
+  const trabalho = await um("select j.id from pdv_print_jobs j join pdv_production_points pp on pp.id = j.production_point_id where j.order_id = $1 and pp.code = $2", [id, doBar.code]);
+  return await um("select pdv__conteudo_impressao($1)", [trabalho]);
+}, (r: any) => Array.isArray(r.itens) && r.itens.length === 0 || JSON.stringify(r).slice(0, 300));
+
+await ok("pedido gravado direto pelo app (sincronização) não enfileira nada: o app imprime sozinho", async () => {
+  const pedido = await um(`insert into pdv_card_orders (card_id, created_by_name, table_number) values ($1, 'Beto', 'T1') returning id`, [comandaGarcom]);
+  await sql(`insert into pdv_card_items (order_id, card_id, menu_item_id, item_name, quantity, unit_price_cents, production_point_id)
+             select $1, $2, i.id, i.name, 1, i.price_cents, i.production_point_id from pdv_menu_items i where i.id = $3`, [pedido, comandaGarcom, daCozinha.id]);
+  return await um("select count(*)::int from pdv_print_jobs where order_id = $1", [pedido]);
+}, (n: any) => n === 0 || n);
+
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);

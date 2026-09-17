@@ -17,3 +17,4 @@ credenciais.properties
 
 # acesso ao painel web - nunca versionar
 painel-credenciais.txt
+ferramentas/estacao-conta.json
