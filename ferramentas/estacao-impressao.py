@@ -71,7 +71,9 @@ def entrar(apikey):
 # ---------------------------------------------------------------- cupom
 # A Elgin i9 imprime claro demais no padrão: negrito + dupla batida deixam
 # o papel legível na cozinha. Tamanho dobrado no que precisa ser lido de longe.
-INIT = b"\x1b@" + b"\x1bt\x03" + b"\x1bG\x01"   # início + acentos PC860 + dupla batida
+INIT = b"\x1b@" + b"\x1bt\x03" + b"\x1bG\x01" + b"\x1b3\x24"
+# início + acentos PC860 + dupla batida (letra escura) + entrelinha maior,
+# para o cupom não sair com tudo grudado
 NEGRITO = b"\x1bE\x01"
 SEM_NEGRITO = b"\x1bE\x00"
 GRANDE = b"\x1d!\x11"      # dobra largura e altura
