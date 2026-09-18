@@ -1,3 +1,21 @@
+-- Telefone formatado e distância com vírgula no cupom.
+CREATE OR REPLACE FUNCTION public.dlv__fone_bonito(p text)
+ RETURNS text LANGUAGE sql IMMUTABLE
+AS $function$
+  SELECT CASE
+           WHEN p IS NULL THEN NULL
+           WHEN length(regexp_replace(p, '\D', '', 'g')) = 11 THEN
+             '(' || substr(regexp_replace(p, '\D', '', 'g'), 1, 2) || ') ' ||
+             substr(regexp_replace(p, '\D', '', 'g'), 3, 5) || '-' ||
+             substr(regexp_replace(p, '\D', '', 'g'), 8, 4)
+           WHEN length(regexp_replace(p, '\D', '', 'g')) = 10 THEN
+             '(' || substr(regexp_replace(p, '\D', '', 'g'), 1, 2) || ') ' ||
+             substr(regexp_replace(p, '\D', '', 'g'), 3, 4) || '-' ||
+             substr(regexp_replace(p, '\D', '', 'g'), 7, 4)
+           ELSE p
+         END;
+$function$;
+
 -- Via de entrega/caixa: mesma informação, arrumada em blocos separados e com
 -- respiro entre eles (estava tudo colado e difícil de ler no balcão).
 -- Ordem nova: pedido -> cliente -> endereço -> itens -> pagamento -> o que cobrar.
@@ -51,7 +69,7 @@ BEGIN
     l := l || jsonb_build_object('tipo', 'espaco');
     l := l || jsonb_build_object('t', '  ' || upper(o.customer_name), 'e', 'a');
     IF o.customer_phone IS NOT NULL THEN
-      l := l || jsonb_build_object('t', '  Telefone: ' || o.customer_phone, 'e', 'b');
+      l := l || jsonb_build_object('t', '  Telefone: ' || public.dlv__fone_bonito(o.customer_phone), 'e', 'b');
     END IF;
     SELECT orders_count INTO v_pedidos FROM public.dlv_customers WHERE phone = o.customer_phone;
     IF v_pedidos IS NOT NULL THEN
@@ -76,7 +94,7 @@ BEGIN
         l := l || jsonb_build_object('t', '  Referencia: ' || o.address_reference, 'e', 'b');
       END IF;
       IF o.distance_km IS NOT NULL THEN
-        l := l || jsonb_build_object('t', '  Distancia: ' || to_char(o.distance_km, 'FM9990.0') || ' km');
+        l := l || jsonb_build_object('t', '  Distancia: ' || replace(to_char(o.distance_km, 'FM9990.0'), '.', ',') || ' km');
       END IF;
     ELSE
       l := l || jsonb_build_object('t', 'RETIRADA NO BALCAO', 'e', 'b');
