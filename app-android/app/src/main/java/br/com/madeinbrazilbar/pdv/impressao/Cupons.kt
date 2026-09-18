@@ -63,6 +63,41 @@ object Cupons {
         .cortar()
 
     /**
+     * Mesma producao, mas do pedido lancado no navegador: os dados vem da
+     * fila do servidor, nao do banco deste aparelho. Layout igual ao de cima
+     * de proposito - quem produz ve sempre o mesmo papel.
+     */
+    fun comandaProducaoDoServidor(t: TrabalhoComanda, pontoNome: String): EscPos = EscPos()
+        .inicializar()
+        .centralizado()
+        .dobrado(true).negrito(true)
+        .linha(pontoNome.uppercase())
+        .dobrado(false).negrito(false)
+        .separador('=')
+        .aEsquerda()
+        .apply {
+            dobrado(true).negrito(true)
+            linha("COMANDA ${t.comandaNumero}")
+            dobrado(false).negrito(false)
+            t.mesa?.takeIf { it.isNotBlank() }?.let { colunas("Mesa", it) }
+            t.cliente?.takeIf { it.isNotBlank() }?.let { colunas("Cliente", it) }
+            colunas("Atendente", t.operador?.takeIf { it.isNotBlank() } ?: "-")
+            colunas("Hora", t.criadoEm?.let { horario.format(Date(it)) } ?: "-")
+            separador()
+            for (item in t.itens) {
+                negrito(true)
+                colunas("${item.quantidade}x ${item.nome}", "")
+                negrito(false)
+                item.observacao?.takeIf { it.isNotBlank() }?.let {
+                    paragrafo("obs: $it", recuo = "   ")
+                }
+            }
+            separador()
+        }
+        .avancar(3)
+        .cortar()
+
+    /**
      * Conferencia da conta: o que o cliente le antes de pagar.
      * Nao e documento fiscal - o modulo fiscal esta fora desta versao.
      */

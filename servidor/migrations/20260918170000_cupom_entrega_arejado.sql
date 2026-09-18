@@ -15,6 +15,7 @@ AS $function$
            ELSE p
          END;
 $function$;
+REVOKE ALL ON FUNCTION public.dlv__fone_bonito(text) FROM PUBLIC, anon, authenticated;
 
 -- Via de entrega/caixa: mesma informação, arrumada em blocos separados e com
 -- respiro entre eles (estava tudo colado e difícil de ler no balcão).

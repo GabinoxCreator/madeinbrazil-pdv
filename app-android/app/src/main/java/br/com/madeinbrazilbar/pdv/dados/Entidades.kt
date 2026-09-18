@@ -124,6 +124,9 @@ object TipoImpressao {
     const val TESTE = "teste"
     /** Cupom da fila do delivery no servidor. Sem pedidoId: não mexe no print_status do PDV. */
     const val DELIVERY = "delivery"
+
+    /** Cupom da comanda lançada no navegador (painel/garçom), vindo da fila do servidor. */
+    const val GARCOM = "garcom"
 }
 
 /**

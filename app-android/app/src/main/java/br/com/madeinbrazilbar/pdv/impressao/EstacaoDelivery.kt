@@ -6,6 +6,7 @@ import br.com.madeinbrazilbar.pdv.dados.StatusImpressao
 import br.com.madeinbrazilbar.pdv.dados.TipoImpressao
 import br.com.madeinbrazilbar.pdv.dados.TrabalhoImpressao
 import br.com.madeinbrazilbar.pdv.sincronia.ClienteServidor
+import br.com.madeinbrazilbar.pdv.sincronia.ErroServidor
 import br.com.madeinbrazilbar.pdv.sincronia.texto
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -49,7 +50,7 @@ class ConclusaoDelivery(
         val c = cliente() ?: return@withLock false
         val ok = t.status == StatusImpressao.ENVIADO
         try {
-            c.rpc(FUNCAO_CONCLUIR, argumentos(trabalhoId, ok, if (ok) null else t.ultimoErro ?: "falha na impressão"))
+            c.rpc(funcaoConclusao(t.tipo), argumentos(trabalhoId, ok, if (ok) null else t.ultimoErro ?: "falha na impressão"))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -70,6 +71,14 @@ class ConclusaoDelivery(
     companion object {
         const val FUNCAO_RESERVAR = "dlv_reservar_impressoes"
         const val FUNCAO_CONCLUIR = "dlv_concluir_impressao"
+
+        /** Fila das comandas lançadas no navegador (painel e tela do garçom). */
+        const val FUNCAO_RESERVAR_COMANDAS = "pdv_reservar_impressoes"
+        const val FUNCAO_CONCLUIR_COMANDAS = "pdv_concluir_impressao"
+
+        /** Cada cupom volta pela fila de onde veio. */
+        fun funcaoConclusao(tipo: String) =
+            if (tipo == TipoImpressao.GARCOM) FUNCAO_CONCLUIR_COMANDAS else FUNCAO_CONCLUIR
 
         fun argumentos(trabalhoId: String, ok: Boolean, erro: String?): JsonObject = buildJsonObject {
             put("p_trabalho", trabalhoId)
@@ -132,30 +141,96 @@ class EstacaoDelivery(
         }
     }
 
-    /** Uma volta: reenvia o que o servidor não soube, reserva e enfileira. Devolve quantos cupons entraram. */
+    /**
+     * Uma volta: reenvia o que o servidor não soube, reserva as DUAS filas
+     * (delivery e comandas lançadas no navegador) e enfileira. Devolve
+     * quantos cupons entraram.
+     */
     suspend fun rodada(): Int {
         conclusao.reenviarPendentes()
 
-        val resposta = try {
-            cliente.rpc(ConclusaoDelivery.FUNCAO_RESERVAR, buildJsonObject { put("p_limite", LIMITE_POR_RESERVA) })
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            _estado.value = _estado.value.copy(ultimoErro = e.message ?: e.javaClass.simpleName)
+        var erro: String? = null
+        val doDelivery = reservar(ConclusaoDelivery.FUNCAO_RESERVAR) { erro = it }
+        val dasComandas = reservar(ConclusaoDelivery.FUNCAO_RESERVAR_COMANDAS) { if (erro == null) erro = it }
+        // as duas fora do ar: nada foi reservado, o estado só guarda o erro
+        if (doDelivery == null && dasComandas == null) {
+            _estado.value = _estado.value.copy(ultimoErro = erro)
             return 0
         }
 
         var enfileirados = 0
-        for (elemento in (resposta as? JsonArray).orEmpty()) {
-            val j = elemento as? JsonObject ?: continue
-            if (receber(j)) enfileirados++
-        }
+        for (j in doDelivery.orEmpty()) if (receber(j)) enfileirados++
+        for (j in dasComandas.orEmpty()) if (receberComanda(j)) enfileirados++
         _estado.value = _estado.value.copy(
             ultimaReservaEm = relogio(),
-            ultimoErro = null,
+            ultimoErro = erro,
             cuponsRecebidos = _estado.value.cuponsRecebidos + enfileirados
         )
         return enfileirados
+    }
+
+    /** Reserva uma fila. Null = não deu pra falar com o servidor (o motivo vai no aviso). */
+    private suspend fun reservar(funcao: String, aoFalhar: (String) -> Unit): List<JsonObject>? {
+        val resposta = try {
+            cliente.rpc(funcao, buildJsonObject { put("p_limite", LIMITE_POR_RESERVA) })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ErroServidor) {
+            // servidor ainda sem esta fila (migration não aplicada): não é erro da estação
+            if (e.status != 404) aoFalhar(e.message ?: "falha ao reservar")
+            return if (e.status == 404) emptyList() else null
+        } catch (e: Exception) {
+            aoFalhar(e.message ?: e.javaClass.simpleName)
+            return null
+        }
+        return (resposta as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
+    }
+
+    /** Cupom de produção de comanda lançada no navegador. Devolve true se virou cupom novo na fila. */
+    private suspend fun receberComanda(j: JsonObject): Boolean {
+        val trabalhoId = j.texto("trabalho_id") ?: return false
+
+        val existente = dao.impressaoDoDelivery(trabalhoId)
+        if (existente != null) {
+            when {
+                existente.status == StatusImpressao.PENDENTE -> Unit
+                !existente.concluidoNoServidor -> conclusao.concluirSeFaltar(existente.id)
+                else -> dao.reenfileirarDelivery(existente.id)
+            }
+            return false
+        }
+
+        val trabalho = try {
+            TrabalhoComanda.ler(j)
+        } catch (e: Exception) {
+            recusar(trabalhoId, "trabalho ilegível no aparelho: ${e.message}", ConclusaoDelivery.FUNCAO_CONCLUIR_COMANDAS)
+            return false
+        }
+        if (trabalho.tipo != TipoTrabalhoComanda.PRODUCAO) {
+            recusar(trabalhoId, "tipo ${trabalho.tipo} desconhecido no aparelho", ConclusaoDelivery.FUNCAO_CONCLUIR_COMANDAS)
+            return false
+        }
+
+        val ponto = cardapioAtual().ponto(trabalho.pontoCodigo)
+        if (ponto == null) {
+            recusar(trabalhoId, "ponto ${trabalho.pontoCodigo} desconhecido no aparelho", ConclusaoDelivery.FUNCAO_CONCLUIR_COMANDAS)
+            return false
+        }
+        val nomePonto = trabalho.pontoNome?.takeIf { it.isNotBlank() } ?: ponto.nome
+        val cupom = Cupons.comandaProducaoDoServidor(trabalho, nomePonto)
+
+        dao.enfileirar(
+            TrabalhoImpressao(
+                pontoId = trabalho.pontoCodigo,
+                tipo = TipoImpressao.GARCOM,
+                conteudo = cupom.bytes(),
+                previa = cupom.textoDaPrevia(),
+                descricao = "Comanda ${trabalho.comandaNumero} · $nomePonto",
+                criadoEm = relogio(),
+                trabalhoDeliveryId = trabalhoId
+            )
+        )
+        return true
     }
 
     /** Devolve true se virou cupom novo na fila. */
@@ -215,10 +290,14 @@ class EstacaoDelivery(
         return true
     }
 
-    /** Trabalho que este aparelho não consegue imprimir: devolve como falha. */
-    private suspend fun recusar(trabalhoId: String, motivo: String) {
+    /** Trabalho que este aparelho não consegue imprimir: devolve como falha, na fila de onde veio. */
+    private suspend fun recusar(
+        trabalhoId: String,
+        motivo: String,
+        funcao: String = ConclusaoDelivery.FUNCAO_CONCLUIR
+    ) {
         try {
-            cliente.rpc(ConclusaoDelivery.FUNCAO_CONCLUIR, ConclusaoDelivery.argumentos(trabalhoId, false, motivo))
+            cliente.rpc(funcao, ConclusaoDelivery.argumentos(trabalhoId, false, motivo))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
