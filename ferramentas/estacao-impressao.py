@@ -143,6 +143,55 @@ def item_linhas(item, bebida=False):
     return b
 
 
+def quebrar(texto, largura):
+    """Quebra a linha respeitando o recuo dos complementos."""
+    texto = str(texto or "")
+    if len(texto) <= largura:
+        return [texto]
+    recuo = " " * (len(texto) - len(texto.lstrip(" ")))
+    partes, atual = [], ""
+    for palavra in texto.split():
+        tentativa = (atual + " " + palavra).strip()
+        if len(recuo + tentativa) <= largura:
+            atual = tentativa
+        else:
+            partes.append(recuo + atual)
+            atual = palavra
+    partes.append(recuo + atual)
+    return partes
+
+
+def render_linhas(linhas):
+    """Imprime o cupom que o SERVIDOR montou (chave 'linhas').
+
+    Cada linha: {"t": texto} ou {"esq","dir"} ou {"tipo": traco|traco_duplo|espaco}.
+    Estilo em "e": b = negrito, a = altura dobrada, g = largura e altura dobradas.
+    "c": true centraliza.
+    """
+    b = INIT
+    for ln in linhas:
+        tipo = ln.get("tipo")
+        if tipo == "traco":
+            b += traco()
+            continue
+        if tipo == "traco_duplo":
+            b += traco("=")
+            continue
+        if tipo == "espaco":
+            b += txt()
+            continue
+        estilo = ln.get("e")
+        grande, alto, negrito = estilo == "g", estilo == "a", estilo == "b"
+        largura = LARGURA // 2 if grande else LARGURA
+        if "esq" in ln:
+            b += txt(colunas(str(ln.get("esq") or ""), str(ln.get("dir") or ""), largura),
+                     grande=grande, alto=alto, negrito=negrito, centro=ln.get("c", False))
+            continue
+        for parte in quebrar(ln.get("t"), largura):
+            b += txt(parte, grande=grande, alto=alto, negrito=negrito, centro=ln.get("c", False))
+    return b + CORTAR
+
+
 def cupom_comanda(t):
     """Produção de um pedido lançado pelo navegador (painel ou /garcom)."""
     comanda = t.get("comanda") or {}
@@ -165,64 +214,91 @@ def cupom_comanda(t):
 
 
 def cupom_delivery(t):
+    """Delivery. Cozinha/bar: letra grande, direto ao ponto.
+    Caixa (via de entrega/retirada): letra normal, blocos separados,
+    negrito só no que decide a ação — total, o que receber e o endereço."""
     pedido = t.get("pedido") or {}
     ponto = t.get("ponto") or {}
     tipo = t.get("tipo") or ""
     entrega = pedido.get("modo") == "entrega"
     endereco = pedido.get("endereco") or {}
     telefone = str(pedido.get("telefone") or "")
+    via = tipo == "via_entrega"
 
     b = INIT
-    b += txt("MADE IN BRAZIL FOOD", negrito=True, centro=True)
-    if tipo == "via_entrega":
-        b += txt("VIA DE ENTREGA" if entrega else "VIA DA RETIRADA", grande=True, negrito=True, centro=True)
+    b += txt("MADE IN BRAZIL FOOD", centro=True)
+    if via:
+        b += txt("VIA DE ENTREGA" if entrega else "VIA DA RETIRADA", alto=True, negrito=True, centro=True)
     elif tipo == "cancelamento":
         b += txt("PEDIDO CANCELADO", grande=True, negrito=True, centro=True)
     else:
         b += txt(str(ponto.get("nome") or "").upper(), grande=True, negrito=True, centro=True)
     b += traco("=")
 
-    b += txt(f"PEDIDO #{pedido.get('numero')}", grande=True, negrito=True)
-    b += txt(colunas("ENTREGA" if entrega else "RETIRADA", hora(pedido.get("criado_em"))), negrito=True)
-    b += txt(str(pedido.get("cliente") or ""), alto=True, negrito=True)
-    if telefone and tipo == "via_entrega":
-        b += txt(telefone, alto=True, negrito=True)
-    b += traco()
-
-    for item in t.get("itens") or []:
-        b += item_linhas(item, bebida=tipo == "via_entrega" and str(item.get("ponto") or "") in BEBIDAS)
-
-    if tipo == "via_entrega":
+    if via:
+        # cabeçalho enxuto: número, hora, cliente e telefone
+        b += txt(colunas(f"PEDIDO #{pedido.get('numero')}", hora(pedido.get("criado_em"))), negrito=True)
+        b += txt(("Entrega" if entrega else "Retirada") + " · " + str(pedido.get("cliente") or ""))
+        if telefone:
+            b += txt("Telefone " + telefone)
+        b += txt()
+        b += txt("ITENS")
+        b += traco()
+        for item in t.get("itens") or []:
+            bebida = str(item.get("ponto") or "") in BEBIDAS
+            nome = f"{item.get('quantidade')}x {item.get('nome')}"
+            b += txt(nome + ("   [BEBIDA]" if bebida else ""), negrito=bebida)
+            for o in item.get("opcoes") or []:
+                q = o.get("quantidade") or 1
+                b += txt(f"    {str(q) + 'x ' if q > 1 else ''}{o.get('nome')}")
+            if item.get("observacao"):
+                b += txt(f"    obs: {item['observacao']}")
         b += traco()
         b += txt(colunas("Subtotal", dinheiro(pedido.get("subtotal_cents"))))
         if entrega:
             b += txt(colunas("Taxa de entrega", dinheiro(pedido.get("taxa_entrega_cents"))))
         if pedido.get("desconto_cents"):
             b += txt(colunas("Desconto", "- " + dinheiro(pedido.get("desconto_cents"))))
-        b += txt(colunas("TOTAL", dinheiro(pedido.get("total_cents")), LARGURA // 2), grande=True, negrito=True)
+        b += txt(colunas("TOTAL", dinheiro(pedido.get("total_cents"))), negrito=True)
+        b += txt()
         if pedido.get("pago"):
-            b += txt("PAGO ONLINE - NAO COBRAR", grande=True, negrito=True, centro=True)
+            b += txt("PAGO ONLINE - NAO COBRAR", alto=True, negrito=True, centro=True)
         else:
-            troco = pedido.get("troco_para_cents")
-            b += txt("RECEBER: " + str(pedido.get("pagamento") or ""), alto=True, negrito=True)
-            if troco:
-                b += txt("Troco para " + dinheiro(troco), alto=True, negrito=True)
-        if endereco:
-            b += traco()
-            b += txt("ENTREGAR EM", negrito=True)
-            b += txt(f"{endereco.get('rua')}, {endereco.get('numero')}", grande=True, negrito=True)
-            b += txt(str(endereco.get("bairro") or ""), alto=True, negrito=True)
+            b += txt("RECEBER: " + str(pedido.get("pagamento") or ""), negrito=True)
+            if pedido.get("troco_para_cents"):
+                b += txt("Levar troco para " + dinheiro(pedido["troco_para_cents"]), negrito=True)
+        if entrega and endereco:
+            b += txt()
+            b += traco("=")
+            b += txt("ENTREGAR EM", negrito=True, centro=True)
+            b += traco("=")
+            b += txt(f"{endereco.get('rua')}, {endereco.get('numero')}", alto=True, negrito=True)
+            b += txt(str(endereco.get("bairro") or ""))
             if endereco.get("complemento"):
-                b += txt(str(endereco["complemento"]), negrito=True)
+                b += txt("Compl.: " + str(endereco["complemento"]))
             if endereco.get("referencia"):
                 b += txt("Ref.: " + str(endereco["referencia"]))
             if endereco.get("distancia_km"):
-                b += txt(f"{float(endereco['distancia_km']):.1f} km")
+                b += txt(f"Distancia: {float(endereco['distancia_km']):.1f} km")
+            if telefone:
+                b += txt("Cliente: " + str(pedido.get("cliente") or "") + " · " + telefone)
+        if pedido.get("observacao"):
+            b += txt()
+            b += txt("OBSERVACAO DO PEDIDO", negrito=True)
+            b += txt(str(pedido["observacao"]))
+        b += traco("=")
+        return b + CORTAR
 
+    # cupom de produção (cozinha e bares): grande e curto
+    b += txt(f"PEDIDO #{pedido.get('numero')}", grande=True, negrito=True)
+    b += txt(colunas("ENTREGA" if entrega else "RETIRADA", hora(pedido.get("criado_em"))), negrito=True)
+    b += txt(str(pedido.get("cliente") or ""), alto=True, negrito=True)
+    b += traco()
+    for item in t.get("itens") or []:
+        b += item_linhas(item)
     if pedido.get("observacao"):
         b += traco()
         b += txt("OBS: " + str(pedido["observacao"]), alto=True, negrito=True)
-
     b += traco("=")
     return b + CORTAR
 
@@ -253,7 +329,9 @@ def main():
                     ponto = t.get("ponto") or {}
                     ok, erro = True, None
                     try:
-                        imprimir(str(ponto.get("ip")), int(ponto.get("porta") or 9100), monta(t))
+                        # o servidor manda o cupom pronto; o desenho local é só reserva
+                        dados = render_linhas(t["linhas"]) if t.get("linhas") else monta(t)
+                        imprimir(str(ponto.get("ip")), int(ponto.get("porta") or 9100), dados)
                         alvo = (t.get("pedido") or {}).get("numero") or (t.get("comanda") or {}).get("numero")
                         print(f"  impresso: {rotulo} {alvo} em {ponto.get('nome')}")
                     except Exception as e:  # noqa: BLE001 — qualquer falha volta para a fila
