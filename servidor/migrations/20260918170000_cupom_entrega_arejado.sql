@@ -224,10 +224,16 @@ BEGIN
     IF o.paid_at IS NOT NULL THEN
       l := l || jsonb_build_object('t', '  PAGO - nao cobrar', 'e', 'b');
     ELSE
-      l := l || jsonb_build_object('t', '  COBRAR ' || public.dlv__brl(o.total_cents) ||
+      l := l || jsonb_build_object('t', '  COBRAR ' || public.dlv__brl(o.total_cents) || ' - ' ||
+             CASE o.payment_method
+               WHEN 'dinheiro' THEN 'Dinheiro'
+               WHEN 'credito' THEN 'Cartao de credito'
+               WHEN 'debito' THEN 'Cartao de debito'
+               WHEN 'pix_entrega' THEN 'Pix na entrega'
+               ELSE coalesce(o.payment_method, '-') END ||
              CASE WHEN o.payment_method = 'dinheiro' AND o.change_for_cents IS NOT NULL
                   THEN ' (troco p/ ' || public.dlv__brl(o.change_for_cents) || ')'
-                  WHEN o.payment_method = 'dinheiro' THEN ' (dinheiro, sem troco)'
+                  WHEN o.payment_method = 'dinheiro' THEN ' (sem troco)'
                   ELSE '' END, 'e', 'b');
     END IF;
     l := l || jsonb_build_object('tipo', 'traco');
