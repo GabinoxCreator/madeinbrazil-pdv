@@ -204,6 +204,33 @@ BEGIN
     l := l || jsonb_build_object('t', 'CLIENTE', 'e', 'b', 'c', true);
     l := l || jsonb_build_object('t', upper(o.customer_name), 'e', 'g', 'c', true);
     l := l || jsonb_build_object('tipo', 'traco');
+    -- O cupom da produção vai grampeado na marmita: leva o que o entregador precisa.
+    IF v_entrega THEN
+      l := l || jsonb_build_object('t', 'ENTREGAR EM', 'e', 'b');
+      l := l || jsonb_build_object('t', '  ' || upper(o.address_street || ', ' || coalesce(o.address_number, 'S/N')), 'e', 'b');
+      l := l || jsonb_build_object('t', '  ' || coalesce(o.address_neighborhood, '') || coalesce(' - ' || o.address_city, ''));
+      IF o.address_complement IS NOT NULL THEN
+        l := l || jsonb_build_object('t', '  Complemento: ' || o.address_complement);
+      END IF;
+      IF o.address_reference IS NOT NULL THEN
+        l := l || jsonb_build_object('t', '  Referencia: ' || o.address_reference);
+      END IF;
+    ELSE
+      l := l || jsonb_build_object('t', 'RETIRADA NO BALCAO', 'e', 'b');
+    END IF;
+    IF o.customer_phone IS NOT NULL THEN
+      l := l || jsonb_build_object('t', '  Telefone: ' || public.dlv__fone_bonito(o.customer_phone));
+    END IF;
+    IF o.paid_at IS NOT NULL THEN
+      l := l || jsonb_build_object('t', '  PAGO - nao cobrar', 'e', 'b');
+    ELSE
+      l := l || jsonb_build_object('t', '  COBRAR ' || public.dlv__brl(o.total_cents) ||
+             CASE WHEN o.payment_method = 'dinheiro' AND o.change_for_cents IS NOT NULL
+                  THEN ' (troco p/ ' || public.dlv__brl(o.change_for_cents) || ')'
+                  WHEN o.payment_method = 'dinheiro' THEN ' (dinheiro, sem troco)'
+                  ELSE '' END, 'e', 'b');
+    END IF;
+    l := l || jsonb_build_object('tipo', 'traco');
   END IF;
 
   IF o.notes IS NOT NULL THEN
