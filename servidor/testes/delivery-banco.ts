@@ -1471,6 +1471,30 @@ await ok("taxa zerada volta a não cobrar nada", async () => {
   return await um("select service_fee_cents from dlv_orders where id = $1", [p.pedido_id]);
 }, (n: any) => Number(n) === 0 || n);
 
+// ---------------------------------------------------------------- 14b. resumo do dia
+console.log("\n— Resumo do dia (relatório das 14h30)");
+
+await ok("resumo do dia traz vendido, cancelado, formas de pagamento e motoqueiros", async () => {
+  const hoje = await um("select (dlv__agora_local())::date");
+  return await um("select dlv__resumo_do_dia($1)", [hoje]);
+}, (r: any) =>
+  typeof r.bruto_cents === "number" && Array.isArray(r.pagamentos) && Array.isArray(r.motoqueiros)
+  && r.pedidos >= 0 && r.ticket_cents >= 0 || JSON.stringify(r).slice(0, 300));
+
+await ok("cancelado não entra no vendido e vira 'perdido'", async () => {
+  const hoje = await um("select (dlv__agora_local())::date");
+  const r = await um("select dlv__resumo_do_dia($1)", [hoje]);
+  const soma = (r.pagamentos ?? []).reduce((s: number, p: any) => s + Number(p.valor_cents), 0);
+  return { bruto: r.bruto_cents, soma, perdido: r.perdido_cents };
+}, (x: any) => x.bruto === x.soma && x.perdido >= 0 || JSON.stringify(x));
+
+await recusa("anônimo não lê o resumo do dia", () =>
+  como("anon", null, () => um("select dlv__resumo_do_dia(null)")), "permission denied");
+
+await ok("guardamos só o hash do token do relatório, e ele nasce vazio", () =>
+  um("select value from dlv_settings where key = 'relatorio_token_hash'"),
+  (t: any) => t === "" || t);
+
 // ---------------------------------------------------------------- 15. endereços do IBGE
 console.log("\n— Endereços (base do IBGE)");
 const buscaEndereco = (cep: string | null, num: string | null, rua: string | null) =>
