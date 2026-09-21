@@ -832,9 +832,9 @@ await recusa("anônimo não executa dlv_registrar_checkout", () => como("anon", 
 await recusa("anônimo não executa dlv_confirmar_pagamento_online", () => como("anon", null, () => sql("select dlv_confirmar_pagamento_online(gen_random_uuid(), 'x', 1, 'pix')")), "permission denied");
 await recusa("usuário do painel também não confirma pagamento online", () => como("authenticated", PAINEL, () => sql("select dlv_confirmar_pagamento_online(gen_random_uuid(), 'x', 1, 'pix')")), "permission denied");
 await recusa("usuário do painel não lê pedido para pagamento", () => como("authenticated", PAINEL, () => sql("select dlv_pedido_para_pagamento($1)", ["0".repeat(32)])), "permission denied");
-await ok("anônimo executa só as 5 funções públicas do delivery", () => sql(`select string_agg(p.proname, ',' order by p.proname) f from pg_proc p
+await ok("anônimo executa só as 6 funções públicas do delivery", () => sql(`select string_agg(p.proname, ',' order by p.proname) f from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and left(p.proname, 4) = 'dlv_' and has_function_privilege('anon', p.oid, 'EXECUTE')`),
-  (r: any[]) => r[0].f === "dlv_acompanhar_pedido,dlv_cardapio_publico,dlv_consultar_entrega,dlv_criar_pedido,dlv_status_loja" || r[0].f);
+  (r: any[]) => r[0].f === "dlv_acompanhar_pedido,dlv_buscar_endereco,dlv_cardapio_publico,dlv_consultar_entrega,dlv_criar_pedido,dlv_status_loja" || r[0].f);
 
 // criar
 const on1 = await ok("pedido 'online' nasce aguardando pagamento, com prazo", () => criar(pedidoOnline("17870000002")),
@@ -951,9 +951,9 @@ const PIX1 = "00020126580014br.gov.bcb.pix0136chave-teste5204000053039865802BR63
 await recusa("anônimo não executa dlv_registrar_pagamento_online", () => como("anon", null, () => sql("select dlv_registrar_pagamento_online(gen_random_uuid(), 'x', 'pix', 'y')")), "permission denied");
 await recusa("logado sem painel não executa dlv_registrar_pagamento_online", () => como("authenticated", ESTRANHO, () => sql("select dlv_registrar_pagamento_online(gen_random_uuid(), 'x', 'pix', 'y')")), "permission denied");
 await recusa("usuário do painel não executa dlv_registrar_pagamento_online", () => como("authenticated", PAINEL, () => sql("select dlv_registrar_pagamento_online(gen_random_uuid(), 'x', 'pix', 'y')")), "permission denied");
-await ok("anônimo continua executando só as 5 funções públicas do delivery", () => sql(`select string_agg(p.proname, ',' order by p.proname) f from pg_proc p
+await ok("anônimo continua executando só as 6 funções públicas do delivery", () => sql(`select string_agg(p.proname, ',' order by p.proname) f from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and left(p.proname, 4) = 'dlv_' and has_function_privilege('anon', p.oid, 'EXECUTE')`),
-  (r: any[]) => r[0].f === "dlv_acompanhar_pedido,dlv_cardapio_publico,dlv_consultar_entrega,dlv_criar_pedido,dlv_status_loja" || r[0].f);
+  (r: any[]) => r[0].f === "dlv_acompanhar_pedido,dlv_buscar_endereco,dlv_cardapio_publico,dlv_consultar_entrega,dlv_criar_pedido,dlv_status_loja" || r[0].f);
 
 const tr1 = await criar(pedidoOnline("17860000001"));
 await ok("pedido para pagamento antes de registrar: chaves novas vazias, pago=false", () => paraPagamento(tr1.codigo),
@@ -1131,9 +1131,9 @@ const semOnline = (o: any) => o.pix_expires_at === null && o.mp_payment_id === n
 await recusa("anônimo não executa dlv_trocar_para_pagamento_na_entrega", () => como("anon", null, () => sql("select dlv_trocar_para_pagamento_na_entrega(gen_random_uuid(), 'dinheiro', null)")), "permission denied");
 await recusa("logado sem painel não executa dlv_trocar_para_pagamento_na_entrega", () => como("authenticated", ESTRANHO, () => sql("select dlv_trocar_para_pagamento_na_entrega(gen_random_uuid(), 'dinheiro', null)")), "permission denied");
 await recusa("usuário do painel não executa dlv_trocar_para_pagamento_na_entrega", () => como("authenticated", PAINEL, () => sql("select dlv_trocar_para_pagamento_na_entrega(gen_random_uuid(), 'dinheiro', null)")), "permission denied");
-await ok("anônimo continua executando só as 5 funções públicas do delivery", () => sql(`select string_agg(p.proname, ',' order by p.proname) f from pg_proc p
+await ok("anônimo continua executando só as 6 funções públicas do delivery", () => sql(`select string_agg(p.proname, ',' order by p.proname) f from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and left(p.proname, 4) = 'dlv_' and has_function_privilege('anon', p.oid, 'EXECUTE')`),
-  (r: any[]) => r[0].f === "dlv_acompanhar_pedido,dlv_cardapio_publico,dlv_consultar_entrega,dlv_criar_pedido,dlv_status_loja" || r[0].f);
+  (r: any[]) => r[0].f === "dlv_acompanhar_pedido,dlv_buscar_endereco,dlv_cardapio_publico,dlv_consultar_entrega,dlv_criar_pedido,dlv_status_loja" || r[0].f);
 
 // online → dinheiro com troco, com aceite automático
 await sql("UPDATE dlv_settings SET value = 'true' WHERE key = 'auto_accept'");
@@ -1470,6 +1470,48 @@ await ok("taxa zerada volta a não cobrar nada", async () => {
   const p = await criar(pedido({ endereco: { rua: "Rua da Taxa", numero: "3", ...perto } }));
   return await um("select service_fee_cents from dlv_orders where id = $1", [p.pedido_id]);
 }, (n: any) => Number(n) === 0 || n);
+
+// ---------------------------------------------------------------- 15. endereços do IBGE
+console.log("\n— Endereços (base do IBGE)");
+const buscaEndereco = (cep: string | null, num: string | null, rua: string | null) =>
+  como("anon", null, () => um("select dlv_buscar_endereco($1, $2, $3)", [cep, num, rua]));
+
+await ok("painel importa a base e não duplica ao repetir o lote", async () => {
+  const lote = JSON.stringify([
+    { cep: "15013100", rua: "Rua Santos Dumont", numero: 239, bairro: "VILA ERCILIA", lat: -20.8105, lng: -49.3760 },
+    { cep: "15013100", rua: "Rua Santos Dumont", numero: 301, bairro: "VILA ERCILIA", lat: -20.8110, lng: -49.3765 },
+    { cep: "15025065", rua: "Rua Silva Jardim",  numero: 2535, bairro: "BOA VISTA",    lat: -20.8085, lng: -49.3850 },
+  ]);
+  await como("authenticated", PAINEL, () => um("select dlv_importar_enderecos($1)", [lote]));
+  await como("authenticated", PAINEL, () => um("select dlv_importar_enderecos($1)", [lote]));
+  return await um("select count(*)::int from dlv_enderecos");
+}, (n: any) => n === 3 || n);
+
+await ok("acha a porta pelo CEP + número", () => buscaEndereco("15025065", "2535", null),
+  (r: any) => r.precisao === "exata" && Math.abs(r.lat + 20.8085) < 0.0001 || JSON.stringify(r));
+
+await ok("acha a porta pela rua + número, com ou sem acento e maiúscula", () => buscaEndereco(null, "2535", "rua silva jardim"),
+  (r: any) => r.precisao === "exata" && r.bairro === "BOA VISTA" || JSON.stringify(r));
+
+await ok("número que não existe cai no vizinho mais próximo da mesma rua", () => buscaEndereco("15013100", "250", "Rua Santos Dumont"),
+  (r: any) => r.precisao === "aproximada" && Math.abs(r.lat + 20.8105) < 0.0001 || JSON.stringify(r));
+
+await ok("sem número, usa o trecho do CEP", () => buscaEndereco("15013100", null, null),
+  (r: any) => r.precisao === "cep" && r.lat < -20.8 && r.lat > -20.82 || JSON.stringify(r));
+
+await ok("endereço que não existe devolve vazio, sem inventar ponto", () => buscaEndereco("99999999", "10", "Rua Que Nao Existe"),
+  (r: any) => r.precisao === null && r.lat === null || JSON.stringify(r));
+
+await ok("número muito longe do vizinho não vale como aproximado", () => buscaEndereco(null, "9999", "Rua Silva Jardim"),
+  (r: any) => r.precisao === null || JSON.stringify(r));
+
+await recusa("anônimo não importa endereços", () =>
+  como("anon", null, () => um("select dlv_importar_enderecos($1)", ["[]"])), "permission denied");
+
+await ok("a taxa sai da coordenada da base: Silva Jardim 2535 é grátis", async () => {
+  const e = await buscaEndereco("15025065", "2535", "Rua Silva Jardim");
+  return await como("anon", null, () => um("select dlv_consultar_entrega($1, $2)", [e.lat, e.lng]));
+}, (r: any) => r.entrega === true && r.taxa_cents === 0 || JSON.stringify(r));
 
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
