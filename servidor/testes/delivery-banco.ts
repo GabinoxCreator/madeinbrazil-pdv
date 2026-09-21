@@ -226,6 +226,10 @@ await ok("migration recusada não gravou nada", async () => JSON.stringify(await
 
 await aplicar(arquivos.filter((f) => f >= CORTE_VARIACOES));
 
+// A taxa de processamento é configuração: a bateria roda com ela desligada, para os
+// valores continuarem sendo só comida + entrega. A seção 14 liga e testa a taxa.
+await db.exec("UPDATE public.dlv_settings SET value = '0' WHERE key = 'service_fee_cents'");
+
 console.log("\n— Migration de variações");
 await ok("pedidos antigos (antes dos tamanhos e antes das variações) continuam idênticos", async () => JSON.stringify(await todosAntigos()),
   (d: string) => d === antesVariacoes || `antes ${antesVariacoes}\ndepois ${d}`);
@@ -960,7 +964,8 @@ await ok("registra Pix em pedido online aguardando: grava id (sem espaços), tip
 }, (o: any) => o.mp_payment_id === "mp-tr-1" && o.mp_payment_type === "pix" && o.pix_copy_paste === PIX1 && !o.pago && o.status === "aguardando_pagamento" || JSON.stringify(o));
 await ok("dlv_pedido_para_pagamento mantém as chaves antigas e traz mp_payment_id, mp_payment_type, pix_copia_cola e pago", () => paraPagamento(tr1.codigo),
   (r: any) => Object.keys(r).sort().join() === ["id", "numero", "status", "forma", "total_cents", "cliente_nome", "cliente_telefone", "expira_em",
-    "preference_id", "checkout_url", "itens", "mp_payment_id", "mp_payment_type", "pix_copia_cola", "pago", "tentativas_cartao"].sort().join()
+    "preference_id", "checkout_url", "itens", "mp_payment_id", "mp_payment_type", "pix_copia_cola", "pago", "tentativas_cartao",
+    "taxa_servico_cents"].sort().join()
     && r.id === tr1.pedido_id && r.total_cents === 2940 && r.itens.length === 1
     && r.mp_payment_id === "mp-tr-1" && r.mp_payment_type === "pix" && r.pix_copia_cola === PIX1 && r.pago === false || JSON.stringify(r));
 await ok("nova tentativa (cartão) sobrescreve: id e tipo novos, copia e cola vazio vira null", async () => {
@@ -1416,6 +1421,55 @@ await ok("pedido gravado direto pelo app (sincronização) não enfileira nada: 
              select $1, $2, i.id, i.name, 1, i.price_cents, i.production_point_id from pdv_menu_items i where i.id = $3`, [pedido, comandaGarcom, daCozinha.id]);
   return await um("select count(*)::int from pdv_print_jobs where order_id = $1", [pedido]);
 }, (n: any) => n === 0 || n);
+
+// ---------------------------------------------------------------- 14. taxa de processamento
+console.log("\n— Taxa de processamento");
+await db.exec("UPDATE public.dlv_settings SET value = '99' WHERE key = 'service_fee_cents'");
+
+const comTaxa = await ok("pedido novo já sai com a taxa somada no total", async () =>
+  await criar(pedido({ endereco: { rua: "Rua da Taxa", numero: "1", ...perto } })),
+  (r: any) => r.total_cents === r.subtotal_cents + r.taxa_entrega_cents + 99 || JSON.stringify(r));
+
+await ok("a taxa fica congelada na coluna do pedido", () =>
+  um("select service_fee_cents from dlv_orders where id = $1", [comTaxa?.pedido_id]),
+  (n: any) => Number(n) === 99 || n);
+
+await ok("pedido lançado no balcão pelo painel não leva taxa", async () => {
+  const p = await como("authenticated", PAINEL, () => um("select dlv_criar_pedido_painel($1, 'Caixa')", [JSON.stringify(pedido({
+    cliente: { nome: "Balcao Teste", telefone: "17880000001" },
+    endereco: { rua: "Rua do Balcao", numero: "1", ...perto },
+    pagamento: { forma: "dinheiro" },
+  }))]));
+  return await um("select service_fee_cents from dlv_orders where id = $1", [p.pedido_id]);
+}, (n: any) => Number(n) === 0 || n);
+
+await ok("quem acompanha o pedido vê a taxa separada", async () =>
+  await como("anon", null, () => um("select dlv_acompanhar_pedido($1)", [comTaxa?.codigo])),
+  (r: any) => r.taxa_servico_cents === 99 && r.total_cents === r.subtotal_cents + r.taxa_entrega_cents + 99 || JSON.stringify(r).slice(0, 200));
+
+await ok("a via do caixa imprime a linha da taxa", async () => {
+  const trabalho = await um(
+    `select j.id from dlv_print_jobs j join dlv_orders o on o.id = j.order_id
+      where o.id = $1 and j.kind = 'via_entrega'`, [comTaxa?.pedido_id]);
+  return await um("select dlv__cupom_linhas($1)", [trabalho]);
+}, (linhas: any) => JSON.stringify(linhas).includes("Taxa de processamento") || JSON.stringify(linhas).slice(0, 300));
+
+await recusa("troco menor que o total COM a taxa é recusado", () =>
+  criar(pedido({
+    endereco: { rua: "Rua da Taxa", numero: "2", ...perto },
+    pagamento: { forma: "dinheiro", troco_para_cents: 2940 },
+  })), "troco");
+
+await ok("mudar a taxa não mexe em pedido já feito", async () => {
+  await db.exec("UPDATE public.dlv_settings SET value = '199' WHERE key = 'service_fee_cents'");
+  return await um("select service_fee_cents from dlv_orders where id = $1", [comTaxa?.pedido_id]);
+}, (n: any) => Number(n) === 99 || n);
+
+await ok("taxa zerada volta a não cobrar nada", async () => {
+  await db.exec("UPDATE public.dlv_settings SET value = '0' WHERE key = 'service_fee_cents'");
+  const p = await criar(pedido({ endereco: { rua: "Rua da Taxa", numero: "3", ...perto } }));
+  return await um("select service_fee_cents from dlv_orders where id = $1", [p.pedido_id]);
+}, (n: any) => Number(n) === 0 || n);
 
 console.log(`\n${falhou === 0 ? "🟢" : "🔴"} ${passou} passaram, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
