@@ -1505,6 +1505,15 @@ await ok("endereço que não existe devolve vazio, sem inventar ponto", () => bu
 await ok("número muito longe do vizinho não vale como aproximado", () => buscaEndereco(null, "9999", "Rua Silva Jardim"),
   (r: any) => r.precisao === null || JSON.stringify(r));
 
+await ok("rua com o número digitado junto ainda acha a porta", () => buscaEndereco(null, null, "Rua Silva Jardim 2535"),
+  (r: any) => r.precisao === "exata" && r.bairro === "BOA VISTA" || JSON.stringify(r));
+
+await ok("rua sem o \"Rua\" na frente ainda acha a porta", () => buscaEndereco(null, "2535", "silva jardim"),
+  (r: any) => r.precisao === "exata" || JSON.stringify(r));
+
+await ok("rua com vírgula e espaço sobrando ainda acha a porta", () => buscaEndereco(null, "239", "  Rua  Santos Dumont, "),
+  (r: any) => r.precisao === "exata" || JSON.stringify(r));
+
 await recusa("anônimo não importa endereços", () =>
   como("anon", null, () => um("select dlv_importar_enderecos($1)", ["[]"])), "permission denied");
 
