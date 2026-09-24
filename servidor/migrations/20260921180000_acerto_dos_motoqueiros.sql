@@ -2,6 +2,14 @@
 -- O valor é calculado das entregas do dia, mas fica CONGELADO quando o acerto é
 -- pago — mudar a regra depois não mexe no que já foi acertado.
 
+-- Valores do acerto. Nasceram direto no banco em 18/09; ficam aqui para o
+-- servidor poder ser recriado do zero sem virar acerto de R$ 0,00.
+INSERT INTO public.dlv_settings (key, value) VALUES
+  ('courier_daily_cents', '4000'),     -- fixo por dia trabalhado
+  ('courier_short_fee_cents', '200'),  -- por entrega dentro do raio
+  ('courier_short_km', '2')            -- raio que conta como perto
+ON CONFLICT (key) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS public.dlv_courier_payouts (
   courier_id     uuid NOT NULL REFERENCES public.dlv_couriers(id) ON DELETE CASCADE,
   dia            date NOT NULL,

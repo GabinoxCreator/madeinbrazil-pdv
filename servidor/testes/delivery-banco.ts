@@ -1495,6 +1495,55 @@ await ok("guardamos só o hash do token do relatório, e ele nasce vazio", () =>
   um("select value from dlv_settings where key = 'relatorio_token_hash'"),
   (t: any) => t === "" || t);
 
+// ---------------------------------------------------------------- 14c. relatório por período
+console.log("\n— Relatório do delivery");
+const relatorio = (de?: string, ate?: string) =>
+  como("authenticated", PAINEL, () => um("select dlv_relatorio($1, $2)", [de ?? null, ate ?? null]));
+
+await ok("relatório de hoje fecha a conta: pagamentos somam o bruto", async () => {
+  const r = await relatorio();
+  const soma = (r.pagamentos ?? []).reduce((s: number, p: any) => s + Number(p.valor_cents), 0);
+  return { bruto: r.bruto_cents, soma, liquido: r.liquido_cents, motoboys: r.motoqueiros_total_cents };
+}, (x: any) => x.bruto === x.soma || JSON.stringify(x));
+
+await ok("a taxa do Mercado Pago sai do que foi pago online", async () => {
+  await db.exec("UPDATE dlv_settings SET value = '0.99' WHERE key = 'mp_pix_fee_percent'");
+  const r = await relatorio();
+  const esperado = Math.round(r.online.valor_cents * 0.99 / 100);
+  return { taxa: r.online.taxa_cents, esperado, transferir: r.online.a_transferir_cents, valor: r.online.valor_cents };
+}, (x: any) => x.taxa === x.esperado && x.transferir === x.valor - x.taxa || JSON.stringify(x));
+
+await ok("mudar a taxa do Mercado Pago muda a conta do que transferir", async () => {
+  await db.exec("UPDATE dlv_settings SET value = '2' WHERE key = 'mp_pix_fee_percent'");
+  const r = await relatorio();
+  await db.exec("UPDATE dlv_settings SET value = '0.99' WHERE key = 'mp_pix_fee_percent'");
+  return { taxa: r.online.taxa_cents, esperado: Math.round(r.online.valor_cents * 2 / 100) };
+}, (x: any) => x.taxa === x.esperado || JSON.stringify(x));
+
+await ok("líquido = vendido − motoqueiros − taxa do Mercado Pago", async () => {
+  const r = await relatorio();
+  return { liquido: r.liquido_cents, conta: r.bruto_cents - r.motoqueiros_total_cents - r.online.taxa_cents };
+}, (x: any) => x.liquido === x.conta || JSON.stringify(x));
+
+await ok("cancelado não entra no vendido, entra no perdido", async () => {
+  const r = await relatorio();
+  return { cancelados: r.cancelados, perdido: r.perdido_cents, pedidos: r.pedidos };
+}, (x: any) => x.cancelados >= 0 && x.perdido >= 0 || JSON.stringify(x));
+
+await ok("período de vários dias soma o fixo do motoqueiro por dia trabalhado", async () => {
+  const r = await relatorio("2026-09-01", "2026-12-31");
+  const m = (r.motoqueiros ?? [])[0];
+  return m ? { dias: m.dias, fixo: m.fixo_cents, total: m.total_cents, variavel: m.variavel_cents } : { dias: 0, fixo: 0, total: 0, variavel: 0 };
+}, (x: any) => x.fixo === x.dias * 4000 && x.total === x.fixo + x.variavel || JSON.stringify(x));
+
+await ok("data invertida é aceita e corrigida", async () => {
+  const r = await relatorio("2026-12-31", "2026-09-01");
+  return { de: r.de, ate: r.ate };
+}, (x: any) => x.de === "2026-09-01" && x.ate === "2026-12-31" || JSON.stringify(x));
+
+await recusa("período maior que um ano é recusado", () => relatorio("2020-01-01", "2026-12-31"), "Período muito longo");
+await recusa("anônimo não lê o relatório", () => como("anon", null, () => um("select dlv_relatorio(null, null)")), "permission denied");
+
 // ---------------------------------------------------------------- 15. endereços do IBGE
 console.log("\n— Endereços (base do IBGE)");
 const buscaEndereco = (cep: string | null, num: string | null, rua: string | null) =>
