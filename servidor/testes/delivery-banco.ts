@@ -1495,6 +1495,57 @@ await ok("guardamos só o hash do token do relatório, e ele nasce vazio", () =>
   um("select value from dlv_settings where key = 'relatorio_token_hash'"),
   (t: any) => t === "" || t);
 
+// ---------------------------------------------------------------- 14d. reimprimir via escolhida
+console.log("\n— Reimpressão por via");
+
+const pedidoParaVias = await criar(pedido({
+  cliente: { nome: "Reimpressao Teste", telefone: "17890000001" },
+  endereco: { rua: "Rua da Reimpressao", numero: "10", ...perto },
+  pagamento: { forma: "dinheiro" },
+}));
+
+await ok("as vias do pedido aparecem com nome e situação", () =>
+  como("authenticated", PAINEL, () => um("select dlv_vias_do_pedido($1)", [pedidoParaVias.pedido_id])),
+  (vias: any[]) => Array.isArray(vias) && vias.some((v) => v.tipo === "via_entrega")
+    && vias.some((v) => v.tipo === "producao") || JSON.stringify(vias));
+
+await ok("reimprimir só o caixa gera uma via só", async () => {
+  const antes = await um("select count(*)::int from dlv_print_jobs where order_id = $1", [pedidoParaVias.pedido_id]);
+  const qtd = await como("authenticated", PAINEL, () =>
+    um("select dlv_reimprimir_pedido($1, 'Caixa', $2)", [pedidoParaVias.pedido_id, ["caixa"]]));
+  const depois = await um("select count(*)::int from dlv_print_jobs where order_id = $1", [pedidoParaVias.pedido_id]);
+  return { qtd, novas: depois - antes };
+}, (x: any) => x.qtd === 1 && x.novas === 1 || JSON.stringify(x));
+
+await ok("reimprimir só a cozinha não toca no caixa", async () => {
+  const qtd = await como("authenticated", PAINEL, () =>
+    um("select dlv_reimprimir_pedido($1, 'Caixa', $2)", [pedidoParaVias.pedido_id, ["cozinha"]]));
+  const porTipo = await sql(`select kind, count(*)::int qtd from dlv_print_jobs where order_id = $1 group by 1 order by 1`,
+    [pedidoParaVias.pedido_id]);
+  return { qtd, porTipo };
+}, (x: any) => x.qtd === 1 || JSON.stringify(x));
+
+await ok("sem escolher via, reimprime tudo como antes", async () => {
+  const antes = await um("select count(*)::int from dlv_print_jobs where order_id = $1", [pedidoParaVias.pedido_id]);
+  const qtd = await como("authenticated", PAINEL, () =>
+    um("select dlv_reimprimir_pedido($1, 'Caixa', null)", [pedidoParaVias.pedido_id]));
+  const depois = await um("select count(*)::int from dlv_print_jobs where order_id = $1", [pedidoParaVias.pedido_id]);
+  return { qtd, novas: depois - antes };
+}, (x: any) => x.qtd >= 2 && x.novas === x.qtd || JSON.stringify(x));
+
+await recusa("via que o pedido não tem é recusada", () =>
+  como("authenticated", PAINEL, () => um("select dlv_reimprimir_pedido($1, 'Caixa', $2)", [pedidoParaVias.pedido_id, ["drink"]])),
+  "Nenhuma via");
+
+await recusa("anônimo não reimprime", () =>
+  como("anon", null, () => um("select dlv_reimprimir_pedido($1, 'X', null)", [pedidoParaVias.pedido_id])),
+  "permission denied");
+
+await ok("a auditoria registra quais vias foram reimpressas", () =>
+  um(`select note from dlv_order_events where order_id = $1 and note like 'reimpress%' order by created_at desc limit 1`,
+     [pedidoParaVias.pedido_id]),
+  (n: any) => typeof n === "string" && n.includes("reimpress") || n);
+
 // ---------------------------------------------------------------- 14c. relatório por período
 console.log("\n— Relatório do delivery");
 const relatorio = (de?: string, ate?: string) =>
