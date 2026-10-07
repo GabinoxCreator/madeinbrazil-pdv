@@ -1594,6 +1594,13 @@ await ok("data invertida é aceita e corrigida", async () => {
 
 await recusa("período maior que um ano é recusado", () => relatorio("2020-01-01", "2026-12-31"), "Período muito longo");
 await recusa("anônimo não lê o relatório", () => como("anon", null, () => um("select dlv_relatorio(null, null)")), "permission denied");
+await recusa("anônimo não lê nem a versão interna do relatório", () =>
+  como("anon", null, () => um("select dlv__relatorio_periodo(null, null)")), "permission denied");
+await ok("a versão interna devolve o mesmo que a do painel", async () => {
+  const dentro = await um("select dlv__relatorio_periodo('2026-09-01', '2026-12-31')");
+  const fora = await relatorio("2026-09-01", "2026-12-31");
+  return { a: dentro.bruto_cents, b: fora.bruto_cents, dias: dentro.dias };
+}, (x: any) => x.a === x.b && x.dias > 0 || JSON.stringify(x));
 
 // ---------------------------------------------------------------- 15. endereços do IBGE
 console.log("\n— Endereços (base do IBGE)");
