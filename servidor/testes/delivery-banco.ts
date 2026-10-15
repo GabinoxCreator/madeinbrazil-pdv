@@ -1349,6 +1349,88 @@ await ok("se o pg_net falhar, o pedido é criado mesmo assim", async () => {
   finally { await db.exec("ALTER FUNCTION net.http_post_fora(text, jsonb, jsonb) RENAME TO http_post"); }
 }, (r: any) => r?.status === "em_producao" || JSON.stringify(r));
 
+// ---------------------------------------------------------------- 16b. aviso de cupom que não imprimiu
+console.log("\n— Aviso de cupom que não imprimiu");
+const cupomDe = (pedido: string, codigo: string, tipo = "producao") => um(
+  `select j.id from dlv_print_jobs j join pdv_production_points pp on pp.id = j.production_point_id
+    where j.order_id = $1 and pp.code = $2 and j.kind = $3 order by j.created_at desc limit 1`, [pedido, codigo, tipo]);
+const chamadasCupom = (trabalho: string) => um("select count(*)::int from net.chamadas where body ->> 'acao' = 'cupom' and body ->> 'trabalho' = $1", [trabalho]);
+const reivindicarCupom = (trabalho: string) => como("service_role", null, () => um("select pdv_push_reivindicar_cupom($1)", [trabalho]));
+// a estação passa 5 vezes pela fila; os cupons escolhidos falham, o resto imprime
+async function impressoraFora(falham: string[]) {
+  for (let i = 0; i < 5; i++) {
+    await como("authenticated", TERMINAL, async () => {
+      const r = await um("select dlv_reservar_impressoes(50)");
+      for (const j of r) await sql("select dlv_concluir_impressao($1, $2, 'timed out')", [j.trabalho_id, !falham.includes(j.trabalho_id)]);
+    });
+  }
+}
+
+const pf1 = await criar(naEntrega("17600000011"));
+const pf1Coz = await cupomDe(pf1.pedido_id, "cozinha");
+await ok("cozinha fora: as 4 primeiras tentativas não avisam", async () => {
+  await como("authenticated", TERMINAL, async () => {
+    const r = await um("select dlv_reservar_impressoes(50)");
+    for (const j of r) await sql("select dlv_concluir_impressao($1, $2, 'timed out')", [j.trabalho_id, j.trabalho_id !== pf1Coz]);
+  });
+  return chamadasCupom(pf1Coz);
+}, (n: any) => n === 0 || n);
+await ok("na 5ª tentativa o cupom desiste e chama o aviso uma vez, com o token", async () => {
+  await impressoraFora([pf1Coz]);
+  return { st: await um("select status from dlv_print_jobs where id = $1", [pf1Coz]), n: await chamadasCupom(pf1Coz),
+    tk: await um("select (headers ->> 'x-pdv-push-token') = (select token from pdv_push_segredo) from net.chamadas where body ->> 'trabalho' = $1", [pf1Coz]) };
+}, (x: any) => x.st === "falha" && x.n === 1 && x.tk === true || JSON.stringify(x));
+await ok("reivindicar devolve o pedido e a via que faltou", () => reivindicarCupom(pf1Coz),
+  (r: any) => r?.numero === pf1.numero && r.tipo === "producao" && r.via === "Cozinha" && JSON.stringify(r.faltando) === '["Cozinha"]' || JSON.stringify(r));
+await ok("reivindicar de novo devolve nulo (aviso único)", () => reivindicarCupom(pf1Coz), (r: any) => r === null || JSON.stringify(r));
+await recusa("anônimo não reivindica cupom", () => como("anon", null, () => sql("select pdv_push_reivindicar_cupom(gen_random_uuid())")), "permission denied");
+await recusa("painel não reivindica cupom", () => como("authenticated", PAINEL, () => sql("select pdv_push_reivindicar_cupom(gen_random_uuid())")), "permission denied");
+
+const pf2 = await criar(naEntrega("17600000012"));
+const pf2Coz = await cupomDe(pf2.pedido_id, "cozinha");
+const pf2Via = await cupomDe(pf2.pedido_id, "caixa", "via_entrega");
+await ok("duas vias falham no mesmo pedido: o aviso lista as duas", async () => {
+  await impressoraFora([pf2Coz, pf2Via]);
+  return reivindicarCupom(pf2Coz);
+}, (r: any) => JSON.stringify(r?.faltando) === '["Caixa","Cozinha"]' || JSON.stringify(r));
+await ok("via reimpressa sai da lista de faltando", async () => {
+  await como("authenticated", PAINEL, () => um("select dlv_reimprimir_pedido($1, 'Caixa', array['cozinha'])", [pf2.pedido_id]));
+  return reivindicarCupom(pf2Via);
+}, (r: any) => r?.via === "Caixa" && JSON.stringify(r.faltando) === '["Caixa"]' || JSON.stringify(r));
+
+const pf3 = await criar(naEntrega("17600000013"));
+const pf3Coz = await cupomDe(pf3.pedido_id, "cozinha");
+await ok("cupom que falhou há mais de 1 hora não avisa", async () => {
+  await impressoraFora([pf3Coz]);
+  await db.exec("SET session_replication_role = replica");
+  await sql("update dlv_print_jobs set updated_at = now() - interval '2 hours' where id = $1", [pf3Coz]);
+  await db.exec("SET session_replication_role = DEFAULT");
+  return reivindicarCupom(pf3Coz);
+}, (r: any) => r === null || JSON.stringify(r));
+
+const pf4 = await criar(naEntrega("17600000014"));
+const pf4Coz = await cupomDe(pf4.pedido_id, "cozinha");
+await ok("pedido cancelado: cupom de produção que falhou não avisa", async () => {
+  await impressoraFora([pf4Coz]);
+  await como("authenticated", PAINEL, () => um("select dlv_cancelar_pedido($1, 'cliente desistiu', 'Caixa')", [pf4.pedido_id]));
+  return reivindicarCupom(pf4Coz);
+}, (r: any) => r === null || JSON.stringify(r));
+await ok("aviso de cancelamento que não imprimiu avisa, com o tipo certo", async () => {
+  const canc = await sql("select id from dlv_print_jobs where order_id = $1 and kind = 'cancelamento'", [pf4.pedido_id]);
+  await impressoraFora(canc.map((c: any) => c.id));
+  return Promise.all(canc.map((c: any) => reivindicarCupom(c.id)));
+}, (r: any) => r.length >= 1 && r.every((x: any) => x?.tipo === "cancelamento" && x.numero === pf4.numero) || JSON.stringify(r));
+
+const pf5 = await criar(naEntrega("17600000015"));
+const pf5Coz = await cupomDe(pf5.pedido_id, "cozinha");
+await ok("se o pg_net falhar, o cupom fica em falha normalmente", async () => {
+  await impressoraFora([]);  // imprime os outros cupons pendentes
+  await db.exec("ALTER FUNCTION net.http_post(text, jsonb, jsonb) RENAME TO http_post_fora");
+  try { await sql("update dlv_print_jobs set status = 'pendente' where id = $1", [pf5Coz]); await impressoraFora([pf5Coz]); }
+  finally { await db.exec("ALTER FUNCTION net.http_post_fora(text, jsonb, jsonb) RENAME TO http_post"); }
+  return um("select status from dlv_print_jobs where id = $1", [pf5Coz]);
+}, (r: any) => r === "falha" || r);
+
 // ---------------------------------------------------------------- 14. impressão do que é lançado pelo navegador
 console.log("\n— Impressão do pedido lançado pelo navegador (painel e /garcom)");
 const pratos = await sql(`select i.id, i.name, pp.code from pdv_menu_items i
