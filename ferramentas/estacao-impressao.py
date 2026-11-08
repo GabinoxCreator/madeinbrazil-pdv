@@ -6,6 +6,14 @@ Faz o mesmo papel do app Android: pega os cupons das duas filas do servidor
 (delivery e comandas lançadas pelo navegador), imprime nas térmicas da rede
 local por ESC/POS (porta 9100) e devolve o resultado.
 
+Regra (MB-194, 05/11/2026): a estação só pega cupom se enxerga alguma térmica.
+Antes de cada reserva ela testa a porta 9100 das térmicas cadastradas no
+servidor; se nenhuma atende (computador fora da rede do bar, por exemplo), ela
+não reserva nada e deixa os cupons para a estação que alcança. Em 04/11 uma
+cópia rodando fora do bar reservava os cupons, dava timed out e gastava as 5
+tentativas em segundos. Cada estação entra com a própria conta
+(estacao-conta.json), e assim o banco diz qual delas pegou cada cupom.
+
 Só depende do Python que já vem no macOS (3.8+). Para rodar à mão:
 
     python3 ferramentas/estacao-impressao.py
@@ -17,6 +25,10 @@ o macOS bloqueia para serviços) e sobe pelo launchd
 RunAtLoad e KeepAlive: liga com o computador e volta sozinha se cair.
 O arquivo estacao-conta.json (e-mail, senha do terminal e chave publicável)
 fica ao lado e NÃO vai para o git.
+
+No computador do caixa (Windows) a cópia fica na pasta PDV-estacao-windows do C: e o
+iniciar-estacao.bat baixa esta mesma versão do painel
+(pdv.madeinbrazilbar.com.br/estacao/estacao-impressao.txt) toda vez que sobe.
 """
 
 import json
@@ -26,6 +38,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 SUPABASE_URL = "https://ykhywmtauljpjuqxxpez.supabase.co"
 ENV_PAINEL = os.path.expanduser("~/Downloads/Projetos/madeinbrazil-pdv-painel/.env")
@@ -33,6 +46,9 @@ CONTA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "estacao-conta.
 
 LARGURA = 48  # colunas da Elgin i9 em fonte normal
 ESPERA = 3  # segundos entre consultas à fila
+TESTE_ALCANCE = 1.5  # segundos para a térmica atender a porta 9100
+REVALIDA_ALCANCE = 30  # segundos até testar de novo térmicas que responderam
+RECARREGA_TERMICAS = 5 * 60  # segundos entre leituras da lista de térmicas
 
 
 def chave_publica():
@@ -57,15 +73,59 @@ def post(caminho, corpo, apikey, token=None):
     return json.loads(texto) if texto.strip() else {}
 
 
-def entrar(apikey):
+def get(caminho, apikey, token):
+    pedido = urllib.request.Request(
+        SUPABASE_URL + caminho,
+        headers={"apikey": apikey, "Authorization": "Bearer " + token},
+        method="GET",
+    )
+    with urllib.request.urlopen(pedido, timeout=20) as r:
+        texto = r.read().decode("utf8")
+    return json.loads(texto) if texto.strip() else []
+
+
+def conta_da_estacao():
     with open(CONTA, encoding="utf8") as f:
-        conta = json.load(f)
+        return json.load(f)
+
+
+def entrar(apikey):
+    conta = conta_da_estacao()
     resposta = post(
         "/auth/v1/token?grant_type=password",
         {"email": conta["email"], "password": conta["senha"]},
         apikey,
     )
     return resposta["access_token"]
+
+
+# ---------------------------------------------------------------- alcance
+def termicas(apikey, token):
+    """Térmicas ativas cadastradas no servidor (nome, IP e porta de cada ponto)."""
+    return get(
+        "/rest/v1/pdv_production_points?is_active=eq.true"
+        "&select=id,name,printer_ip,printer_port&order=name",
+        apikey,
+        token,
+    )
+
+
+def porta_aberta(ip, porta, timeout=TESTE_ALCANCE):
+    try:
+        with socket.create_connection((str(ip), int(porta or 9100)), timeout=timeout):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def ao_alcance(pontos):
+    """Nomes das térmicas que atendem a porta 9100 agora (testadas em paralelo)."""
+    pontos = [p for p in (pontos or []) if p.get("printer_ip")]
+    if not pontos:
+        return []
+    with ThreadPoolExecutor(max_workers=len(pontos)) as pool:
+        respondeu = list(pool.map(lambda p: porta_aberta(p["printer_ip"], p.get("printer_port")), pontos))
+    return [str(p.get("name") or p["printer_ip"]) for p, ok in zip(pontos, respondeu) if ok]
 
 
 # ---------------------------------------------------------------- cupom
@@ -313,8 +373,10 @@ def imprimir(ip, porta, dados):
 def main():
     apikey = chave_publica()
     token = entrar(apikey)
-    print("estação ligada — Ctrl+C para parar")
+    print(f"estação ligada como {conta_da_estacao().get('email')} — Ctrl+C para parar")
     renovado = time.time()
+    pontos, lidos, sem_lista = [], 0.0, False
+    alcance, testado, parada = [], 0.0, False
 
     while True:
         try:
@@ -322,10 +384,45 @@ def main():
                 token = entrar(apikey)
                 renovado = time.time()
 
+            # Lista de térmicas: relida a cada RECARREGA_TERMICAS; se veio vazia
+            # (conta da estação desativada, ou nenhum ponto ativo), tenta de novo
+            # a cada REVALIDA_ALCANCE e avisa uma vez só.
+            if time.time() - lidos > (RECARREGA_TERMICAS if pontos else REVALIDA_ALCANCE):
+                pontos = termicas(apikey, token)
+                lidos = time.time()
+            if not pontos:
+                if not sem_lista:
+                    print("o servidor não devolveu nenhuma térmica ativa: conferir a conta da estação "
+                          "(estacao-conta.json) e os pontos de produção no painel")
+                    sem_lista = True
+                time.sleep(ESPERA)
+                continue
+            if sem_lista:
+                print(f"lista de térmicas recebida ({len(pontos)}): seguindo")
+                sem_lista = False
+
+            # Só reserva cupom quem alcança alguma térmica. Sem alcance, testa
+            # de novo a cada volta; com alcance, confere a cada REVALIDA_ALCANCE
+            # e logo depois de qualquer falha de rede na impressão.
+            if not alcance or time.time() - testado > REVALIDA_ALCANCE:
+                alcance = ao_alcance(pontos)
+                testado = time.time()
+            if not alcance:
+                if not parada:
+                    print("nenhuma térmica ao alcance (porta 9100): não pego cupom até alguma responder")
+                    parada = True
+                time.sleep(ESPERA)
+                continue
+            if parada:
+                print(f"térmicas ao alcance: {', '.join(alcance)} — voltando a pegar cupons")
+                parada = False
+
             for fila, monta, rotulo in (
                 ("dlv", cupom_delivery, "delivery"),
                 ("pdv", cupom_comanda, "comanda"),
             ):
+                if not alcance:
+                    break  # a rede caiu no meio da volta: não reserva a outra fila
                 trabalhos = post(f"/rest/v1/rpc/{fila}_reservar_impressoes", {"p_limite": 5}, apikey, token) or []
                 for t in trabalhos:
                     ponto = t.get("ponto") or {}
@@ -339,6 +436,8 @@ def main():
                     except Exception as e:  # noqa: BLE001 — qualquer falha volta para a fila
                         ok, erro = False, str(e)[:200]
                         print(f"  FALHA em {ponto.get('nome')}: {erro}")
+                        if isinstance(e, OSError):
+                            alcance = []  # a rede mudou: testar de novo antes da próxima reserva
                     post(
                         f"/rest/v1/rpc/{fila}_concluir_impressao",
                         {"p_trabalho": t.get("trabalho_id"), "p_ok": ok, "p_erro": erro},
